@@ -11,14 +11,22 @@ export interface SurfaceEventLike {
   data: unknown
 }
 
-/** Extract plain text blocks from a content array, capped. */
+/** Per-event text cap (avoids one giant block dominating the digest). */
+const USER_TEXT_CAP = 300
+const ASSISTANT_TEXT_CAP = 300
+const TOOL_TEXT_CAP = 200
+
+/** Concatenate text blocks up to maxChars, slicing the final block to fit. */
 function collectText(content: readonly ContentBlock[], maxChars: number): string {
   let out = ''
   for (const block of content) {
     if (out.length >= maxChars) break
-    if (block.type === 'text') out += block.text
+    if (block.type === 'text') {
+      const remaining = maxChars - out.length
+      out += block.text.length > remaining ? block.text.slice(0, remaining) : block.text
+    }
   }
-  return out || '(empty)'
+  return out
 }
 
 /** Build a short prefix for a user-message source. */
@@ -30,27 +38,23 @@ function sourceLabel(source: MessageSource | undefined): string {
 
 export function foldSurfaceEvents(events: ReadonlyArray<SurfaceEventLike>, maxChars = 4000): string {
   const lines: string[] = []
-  let budget = maxChars
 
   for (const evt of events) {
-    const used = lines.join('\n').length
-
     if (evt.type === 'user/message') {
       const msg = evt.data as UserMessage
-      const label = sourceLabel(msg.source)
-      if (label !== '') lines.push(`${label}:`)
-      const text = collectText(msg.content, Math.max(0, Math.min(budget - used - 8, 2000)))
-      if (budget > 0 && text !== '(empty)') {
-        lines.push(text.length > 300 ? `${text.slice(0, 300)}…` : text)
+      const text = collectText(msg.content, USER_TEXT_CAP)
+      if (text !== '') {
+        const label = sourceLabel(msg.source)
+        lines.push(label === '' ? text : `${label}: ${text}`)
       }
     } else if (evt.type === 'assistant/message') {
       const data = evt.data as { turn: number; step: number; message: AssistantMessage; usage?: Record<string, unknown> }
-      const text = collectText(data.message.content, Math.max(0, Math.min(budget - used - 12, 1500)))
-      const tokens = data.usage
-        ? ` (${Object.entries(data.usage).map(([k, v]) => `${k}:${v}`).join(', ')})`
-        : ''
-      if (budget > 0 && text !== '(empty)') {
-        lines.push(`[${data.turn}:${data.step}] ${text.length > 300 ? `${text.slice(0, 300)}…` : text}${tokens}`)
+      const text = collectText(data.message.content, ASSISTANT_TEXT_CAP)
+      if (text !== '') {
+        const tokens = data.usage
+          ? ` (${Object.entries(data.usage).map(([k, v]) => `${k}:${v}`).join(', ')})`
+          : ''
+        lines.push(`[${data.turn}:${data.step}] ${text}${tokens}`)
       }
     } else if (evt.type === 'tool/result') {
       const data = evt.data as {
@@ -59,19 +63,15 @@ export function foldSurfaceEvents(events: ReadonlyArray<SurfaceEventLike>, maxCh
         message: ToolResultMessage
         error?: { name: string; code: string }
       }
-      const text = collectText(data.message.content, Math.max(0, Math.min(budget - used - 12, 800)))
-      const errTag = data.error ? ` ⚠${data.error.code}` : ''
-      if (budget > 0 && text !== '(empty)') {
-        lines.push(`[${data.turn}:${data.step}] tool-result${errTag}: ${text.length > 200 ? `${text.slice(0, 200)}…` : text}`)
+      const text = collectText(data.message.content, TOOL_TEXT_CAP)
+      if (text !== '') {
+        const errTag = data.error ? ` ⚠${data.error.code}` : ''
+        lines.push(`[${data.turn}:${data.step}] tool-result${errTag}: ${text}`)
       }
-    }
-
-    budget -= lines.join('\n').length - used
-    if (budget <= 0) {
-      lines.push('…(truncated)')
-      break
     }
   }
 
-  return lines.join('\n') || '[no surface events]'
+  const joined = lines.join('\n')
+  if (joined === '') return '[no surface events]'
+  return joined.length > maxChars ? `${joined.slice(0, maxChars)}…` : joined
 }
