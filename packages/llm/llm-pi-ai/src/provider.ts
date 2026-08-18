@@ -25,6 +25,32 @@ import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messag
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import { catalogProvider } from './catalog.ts'
+import {
+  OPENAI_COMPLETIONS_FULL_URL_PROTOCOL,
+  OPENAI_COMPLETIONS_PROTOCOL,
+} from './protocol.ts'
+
+/**
+ * Present a complete endpoint to pi-ai's Chat Completions implementation.
+ *
+ * The OpenAI SDK appends `/chat/completions` to `baseURL`. Placing that SDK
+ * path in the URL fragment keeps the configured path and query unchanged on
+ * the HTTP request because fragments are not transmitted to servers.
+ * @param model - configured full-endpoint model.
+ * @returns a request-local descriptor that preserves the public protocol id.
+ */
+function fullURLModel(model: Model<Api>): Model<Api> {
+  return { ...model, baseUrl: `${model.baseUrl}#` }
+}
+
+/** Chat Completions parser and serializer with exact endpoint delivery. */
+function openAICompletionsFullURLApi(): ProviderStreams {
+  const delegate = openAICompletionsApi()
+  return {
+    stream: (model, context, options) => delegate.stream(fullURLModel(model), context, options),
+    streamSimple: (model, context, options) => delegate.streamSimple(fullURLModel(model), context, options),
+  }
+}
 
 /**
  * Wire protocols a configured route may name, mapped to pi-ai's lazily loaded
@@ -45,7 +71,8 @@ import { catalogProvider } from './catalog.ts'
  * override is refused.
  */
 const PROTOCOLS: Readonly<Record<string, () => ProviderStreams>> = {
-  'openai-completions': openAICompletionsApi,
+  [OPENAI_COMPLETIONS_PROTOCOL]: openAICompletionsApi,
+  [OPENAI_COMPLETIONS_FULL_URL_PROTOCOL]: openAICompletionsFullURLApi,
   'openai-responses': openAIResponsesApi,
   'anthropic-messages': anthropicMessagesApi,
 }
@@ -180,6 +207,20 @@ export function buildProvider(spec: ProviderSpec): Provider {
       `llm-pi-ai: provider "${spec.provider}" names api "${spec.api}", which this build cannot serve;`
       + ` supported protocols are ${supportedProtocols().join(', ')}`,
     )
+  }
+  if (spec.api === OPENAI_COMPLETIONS_FULL_URL_PROTOCOL) {
+    if (spec.baseURL === undefined) {
+      throw new Error(
+        `llm-pi-ai: provider "${spec.provider}" uses ${OPENAI_COMPLETIONS_FULL_URL_PROTOCOL},`
+        + ' which requires an explicit complete baseURL',
+      )
+    }
+    if (spec.baseURL.includes('#')) {
+      throw new Error(
+        `llm-pi-ai: provider "${spec.provider}" uses ${OPENAI_COMPLETIONS_FULL_URL_PROTOCOL},`
+        + ' whose complete baseURL must not contain a URL fragment',
+      )
+    }
   }
   return createProvider({
     id: spec.provider,

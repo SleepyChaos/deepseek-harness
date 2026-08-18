@@ -30,11 +30,27 @@ function gatewayAdapter(): PiAiAdapter {
   })
 }
 
-async function drain(adapter: PiAiAdapter): Promise<StreamChunk[]> {
+/** A Chat Completions route whose configured address is the complete request URL. */
+function fullURLAdapter(): PiAiAdapter {
+  return new PiAiAdapter({
+    profiles: () => resolveProfiles({
+      'competition-gateway': {
+        api: 'openai-completions-full-url',
+        baseURL: 'https://gateway.test/llm-gateway/proxy/e/route',
+        models: [{ id: 'competition-model', contextWindow: 8192, maxTokens: 1024 }],
+      },
+    }),
+    resolveApiKey: () => Promise.resolve('test-key'),
+  })
+}
+
+async function drain(
+  adapter: PiAiAdapter,
+  target: { provider: string; model: string } = { provider: 'local-gateway', model: 'local-model' },
+): Promise<StreamChunk[]> {
   const chunks: StreamChunk[] = []
   for await (const chunk of adapter.stream({
-    provider: 'local-gateway',
-    model: 'local-model',
+    ...target,
     messages: [],
   })) chunks.push(chunk)
   return chunks
@@ -68,6 +84,37 @@ describe('pi-ai SDK retry boundary', () => {
       baseUrl: 'http://127.0.0.1:9/v1',
       contextWindow: 8192,
       maxTokens: 1024,
+    })
+  })
+
+  it('marks the SDK suffix as a fragment for the full-URL streamSimple path', async () => {
+    streamSimple.mockImplementation(() => { throw new Error('mock SDK boundary') })
+
+    await drain(fullURLAdapter(), { provider: 'competition-gateway', model: 'competition-model' })
+
+    expect(streamSimple.mock.calls[0]?.[0]).toMatchObject({
+      api: 'openai-completions-full-url',
+      baseUrl: 'https://gateway.test/llm-gateway/proxy/e/route#',
+    })
+  })
+
+  it('marks the SDK suffix as a fragment for the full-URL native stream path', () => {
+    streamSimple.mockImplementation(() => { throw new Error('mock SDK boundary') })
+    const profile = resolveProfiles({
+      'competition-gateway': {
+        api: 'openai-completions-full-url',
+        baseURL: 'https://gateway.test/llm-gateway/proxy/e/route',
+        models: [{ id: 'competition-model', contextWindow: 8192, maxTokens: 1024 }],
+      },
+    }).get('competition-gateway')
+    if (profile === undefined) throw new Error('missing test profile')
+    const model = profile.piProvider.getModels()[0]
+    if (model === undefined) throw new Error('missing test model')
+
+    expect(() => profile.piProvider.stream(model, { messages: [] })).toThrow('mock SDK boundary')
+    expect(streamSimple.mock.calls[0]?.[0]).toMatchObject({
+      api: 'openai-completions-full-url',
+      baseUrl: 'https://gateway.test/llm-gateway/proxy/e/route#',
     })
   })
 })

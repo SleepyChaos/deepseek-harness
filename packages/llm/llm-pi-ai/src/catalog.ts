@@ -23,6 +23,7 @@ import type {
   Provider,
   ThinkingLevelMap,
 } from '@earendil-works/pi-ai'
+import { isOpenAICompletionsProtocol } from './protocol.ts'
 
 /**
  * Pricing for a model the installed catalog does not describe. The harness
@@ -373,7 +374,7 @@ function resolveModelReasoning(
  *
  * A model switch wins over the route switch; whatever neither sets keeps the
  * installed entry's value, and a field no layer decides falls through to
- * pi-ai's baseURL-derived detection. Only an `openai-completions` model takes
+ * pi-ai's baseURL-derived detection. Only an OpenAI Chat Completions model takes
  * the switches at all: a model-level switch on any other protocol fails
  * resolution, while a route-level default skips past such models — the same
  * posture as the route-level `reasoning` default, which also must not fail
@@ -395,10 +396,10 @@ function resolveModelCompat(
   const thinkingFormat = entry.compat?.thinkingFormat ?? route?.thinkingFormat
   const supportsReasoningEffort = entry.compat?.supportsReasoningEffort ?? route?.supportsReasoningEffort
   if (thinkingFormat === undefined && supportsReasoningEffort === undefined) return {}
-  if (api !== 'openai-completions') {
+  if (!isOpenAICompletionsProtocol(api)) {
     if (entry.compat?.thinkingFormat !== undefined || entry.compat?.supportsReasoningEffort !== undefined) {
       invalid(provider, `model "${entry.id}" sets compat reasoning switches, but its api is "${api}";`
-        + ' thinkingFormat and supportsReasoningEffort exist only on openai-completions')
+        + ' thinkingFormat and supportsReasoningEffort exist only on OpenAI Chat Completions protocols')
     }
     return {}
   }
@@ -538,9 +539,9 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
       ...resolveModelCompat(provider, entry, request.compat, base, api),
     }
   })
-  if (routeCompatDefined && !models.some(model => model.api === 'openai-completions')) {
-    invalid(provider, 'sets compat reasoning switches, but no model on the route speaks openai-completions;'
-      + ' thinkingFormat and supportsReasoningEffort exist only on that protocol')
+  if (routeCompatDefined && !models.some(model => isOpenAICompletionsProtocol(model.api))) {
+    invalid(provider, 'sets compat reasoning switches, but no model on the route speaks an OpenAI Chat Completions'
+      + ' protocol; thinkingFormat and supportsReasoningEffort exist only on those protocols')
   }
   return { models, configuredMaxTokens }
 }

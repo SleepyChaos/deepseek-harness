@@ -16,7 +16,12 @@ afterEach(cleanup)
 
 const t: ModelsSectionInjected['t'] = key => en[key]
 
-const PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages']
+const PROTOCOLS = [
+  'openai-completions',
+  'openai-completions-full-url',
+  'openai-responses',
+  'anthropic-messages',
+]
 
 /** The pi-ai profile shape as the host serializes it, including the layer-1 fields. */
 const PiAiConfig = Schema.object({

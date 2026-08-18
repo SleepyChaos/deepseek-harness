@@ -938,10 +938,10 @@ export interface PiAiProviderProfile {
    */
   modelOverrides?: Record<string, PiAiModelOverride>
   /**
-   * Reasoning-dispatch switches for every `openai-completions` model on this
-   * route; each model's own `compat` overrides per field. What neither sets
-   * keeps the installed catalog entry's value, then pi-ai's baseURL-derived
-   * detection.
+   * Reasoning-dispatch switches for every OpenAI Chat Completions model on
+   * this route; each model's own `compat` overrides per field. What neither
+   * sets keeps the installed catalog entry's value, then pi-ai's
+   * baseURL-derived detection.
    */
   compat?: PiAiCompatProfile
   /**

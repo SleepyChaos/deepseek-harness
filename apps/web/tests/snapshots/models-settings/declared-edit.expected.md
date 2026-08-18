@@ -44,6 +44,7 @@
         - text: API 协议
         - combobox "API 协议":
           - option "openai-completions" [selected]
+          - option "openai-completions-full-url"
           - option "openai-responses"
           - option "anthropic-messages"
         - region "模型目录":

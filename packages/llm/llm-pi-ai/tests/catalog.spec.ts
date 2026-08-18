@@ -331,6 +331,20 @@ describe('hand-declared providers', () => {
     expect(() => buildProvider(spec)).toThrow(/cannot serve; supported protocols are/)
   })
 
+  it('requires a fragment-free explicit endpoint for the full-URL protocol', () => {
+    const spec = {
+      provider: 'competition-gateway',
+      displayName: 'Competition Gateway',
+      api: 'openai-completions-full-url',
+      models: [],
+      namesCredential: true,
+    }
+    expect(() => buildProvider(spec)).toThrow(/requires an explicit complete baseURL/)
+    expect(() => buildProvider({ ...spec, baseURL: 'https://gateway.test/endpoint#fragment' }))
+      .toThrow(/must not contain a URL fragment/)
+    expect(() => buildProvider({ ...spec, baseURL: 'https://gateway.test/endpoint' })).not.toThrow()
+  })
+
   it('leaves an unauthenticated route to its protocol rather than inventing a credential', async () => {
     const server = await mockServer([{ events: textEvents }])
     // Naming no credential is the deliberately unauthenticated posture — a
@@ -818,13 +832,13 @@ describe('reasoning-dispatch compat switches', () => {
       anthropic: {
         models: [{ id: 'claude-sonnet-4-5', compat: { thinkingFormat: 'openai' } }],
       },
-    })).toThrow(/exist only on openai-completions/)
+    })).toThrow(/exist only on OpenAI Chat Completions protocols/)
   })
 
   it('rejects route switches no model on the route can take', () => {
     expect(() => resolveProfiles({
       anthropic: { compat: { thinkingFormat: 'openai' } },
-    })).toThrow(/no model on the route speaks openai-completions/)
+    })).toThrow(/no model on the route speaks an OpenAI Chat Completions protocol/)
   })
 })
 

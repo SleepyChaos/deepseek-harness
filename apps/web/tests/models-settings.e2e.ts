@@ -222,6 +222,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     const protocol = dialog.getByLabel('API 协议')
     await protocol.waitFor({ timeout: 10_000 })
     expect(await protocol.inputValue()).toBe('openai-completions')
+    expect(await protocol.locator('option').allTextContents()).toContain('openai-completions-full-url')
     const name = dialog.getByLabel('显示名称', { exact: true })
     expect(await name.inputValue()).toBe('Acme Gateway')
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)

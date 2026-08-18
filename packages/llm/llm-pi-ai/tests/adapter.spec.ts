@@ -73,6 +73,33 @@ describe('PiAiAdapter provider routing', () => {
     expect(server.paths).toEqual(['/chat/completions'])
   })
 
+  it('sends Chat Completions to a configured full URL without appending a path', async () => {
+    const server = await mockServer([{ events: textEvents }])
+    const endpoint = `${server.url}/llm-gateway/proxy/e/competition-route?trace=kept`
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: {
+        'competition-gateway': {
+          apiKeyEnv: 'PI_TEST_KEY',
+          api: 'openai-completions-full-url',
+          baseURL: endpoint,
+          models: [{ id: 'qwen-plus', contextWindow: 131_072, maxTokens: 8192 }],
+        },
+      },
+    })
+
+    const result = await assemble(ctx, {
+      provider: 'competition-gateway',
+      model: 'qwen-plus',
+      messages: [],
+    })
+
+    expect(result.message.content).toEqual([{ type: 'text', text: 'hello' }])
+    expect(server.paths).toEqual(['/llm-gateway/proxy/e/competition-route?trace=kept'])
+    expect(server.requests[0]).toMatchObject({ model: 'qwen-plus', stream: true })
+  })
+
   it('merges profile headers with Harness attribution winning', async () => {
     const server = await mockServer([{ events: textEvents }])
     const ctx = await harness(server.url, {
