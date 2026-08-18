@@ -39,7 +39,7 @@ export const DEFAULT_MAX_WINDOWS = 5
 export const DEFAULT_TOOL_TIMEOUT_MS = 180_000
 
 /** Hard-dependency services the plugin waits for before apply(). */
-export const inject = ['tools', 'systemPrompt', 'agents', 'llm', 'sessionQuery', 'agentPresets']
+export const inject = ['tools', 'systemPrompt', 'agents', 'llm', 'sessionQuery']
 
 /** Deployment-owned bounds. */
 export interface Config {

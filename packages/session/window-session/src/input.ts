@@ -25,7 +25,7 @@ export const windowCreateParameters = {
 export const windowReadParameters = {
   ...TARGET_SESSION_PARAM,
   // How many recent surface events to fold into the digest.
-  tailEvents: { type: 'integer', minimum: 1, maximum: 50, description: 'Max surface events in returned digest. Defaults to 20.' },
+  tailEvents: { type: 'integer', description: 'Max surface events in returned digest. Defaults to 20.' },
 } as const
 
 export const windowSendParameters = {

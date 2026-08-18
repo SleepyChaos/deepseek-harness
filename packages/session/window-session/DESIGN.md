@@ -4,7 +4,8 @@
 > 本文档交付 **`dsh-window-session` 插件的设计与实现蓝图**：让「并发模式」主 Agent
 > 获得创建普通窗口会话（子 Agent）、通信介入、监控读取、任务分发四项能力。
 > 状态：**S0 已解决（§13）**，实现蓝图已定（§14）；**M0-A 完成**（五工具编译通过 + 单测通过），
-> M0-B 逻辑已实现、待真机集成验证。实现进度见 §12。
+> **M0-B 插件边界集成测试完成**（mock 边界服务挂载五工具，9/9 测试通过）；真机 agent-loop 验证留待 M1。
+> 实现进度见 §12。
 > 实现形态修正：本插件落地为 DSH monorepo 的一个**真实 Host 包**
 > `@deepseek-ai/dsh-window-session`（`packages/session/window-session/`），
 > 而非一次性动态插件；随宿主组合挂载、随仓库提交演进（见 §14.4）。
@@ -244,12 +245,15 @@ running/idle --超时无进展--> stalled（心跳标记，供主 Agent 轮询�
 | S0 spike | 上述 sp1–sp5 | 5 项都有明确结论 | ✅ 已提交（`5874f94449`） |
 | 脚手架 | 真实 Host 包 `@deepseek-ai/dsh-window-session` + 五工具注册 + tsconfig 引用 | 包纳入仓库、lint/typecheck 通过 | ✅ 已提交（`5874f94449` + `5ea4bcf031`） |
 | M0-A 建窗 | `window_create` + `window_read` 闭环 + 预算闸/归属 + 单测 | 五工具 `tsc -b` EXIT 0；`vitest` 5/5 通过 | ✅ 已提交（`cd1df76561`） |
-| M0-B 集成验证 | `window_send`(steer)/`window_status`/`window_close` 真机验证 | 在真实 host + agent-loop + 模型下建窗/续派/介入/关窗全通 | 🟡 逻辑已实现，待真机集成测试 |
+| M0-B 集成验证 | `window_send`(steer)/`window_status`/`window_close` 真机验证 | 在真实 host + agent-loop + 模型下建窗/续派/介入/关窗全通 | 🟡 插件边界集成 ✅（mock 边界服务挂载五工具：注册/建窗/状态/续派/归属拒绝/预算/关窗 4 例全通，`vitest` 9/9）；真机验证留待 M1 |
 | M1 并发业务 | 接上主 Agent 队列/升级/提交（v0.2 M1/M2） | 活跃窗口恒 ≤ N；C=1+4 两队列收敛 | ⬜ |
 
 > 注：`window_create`/`window_send`/`window_close`/`window_status` 的完整逻辑在 S0/M0-A
-> 阶段已一并写入 `src/operations.ts`；其余纯逻辑（预算闸、归属校验、digest 折叠）已有单测覆盖。
-> 真机集成验证需要完整 host 组合 + 模型适配器，留待 M0-B/M1。
+> 阶段已一并写入 `src/operations.ts`；纯逻辑（预算闸、归属校验、digest 折叠）与插件边界
+> 集成（`tests/core.spec.ts` + `tests/tools.spec.ts`，共 9 例）均有测试覆盖。
+> 真机集成验证需要完整 host 组合 + 模型适配器 + agent-loop，留待 M1。
+> 附带修正（M0-B 集成测试暴露）：`tailEvents` 不再使用 `minimum/maximum`
+> （value-schema DSL 不支持）；预算闸提前到 create 之前（避免先建后销毁）。
 
 ---
 

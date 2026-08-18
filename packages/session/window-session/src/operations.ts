@@ -16,6 +16,7 @@ import {
 import { installModelSelection, type ModelSelection, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { foldSurfaceEvents, type SurfaceEventLike } from './digest.ts'
 import {
+  activeCount,
   assertOwned,
   listAll,
   registerWindow,
@@ -124,6 +125,14 @@ export async function executeCreate(
 ): Promise<string> {
   const callerId = callerOf(exec)
   const presets = deps.agentPresets
+
+  // 0. Budget gate BEFORE create (avoid create-then-dispose churn) ----------
+  if (activeCount(store) >= store.budget) {
+    return JSON.stringify({
+      error: 'budget-exceeded',
+      message: `window-budget-exceeded: active windows (${activeCount(store)}) reached limit (${store.budget}); close one first.`,
+    })
+  }
 
   // 1. Resolve the model selection (validate + canonicalize) -----------------
   let effectiveModel: ModelSelection | null = null
