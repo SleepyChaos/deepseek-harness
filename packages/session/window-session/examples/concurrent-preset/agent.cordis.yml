@@ -1,0 +1,131 @@
+# 并发模式 agent preset —— M1 业务层草案（DESIGN_窗口会话插件草案.md §15）
+#
+# 与 standard 的差异（有意为之，见 §15.2）：
+#   - 不含 delegation 组（subagent/workflow/ralph）：本模式刻意不用 spawn/fork，
+#     子任务走窗口会话（window_create/send/read/status/close），见《并发Agent预设方案》§1.2。
+#   - 不含 plan-mode 组：调度主 Agent 不需要工程计划模式。
+#   - 新增 window-session 行：五窗口工具 + 预算闸（maxWindows=5）+ 工具引导。
+#
+# 平面规则：本组合所有行都是宿主服务的消费行（不发布服务），因此均为普通行，
+# 不需要 isolate realm；唯一带 realm 的组是 compaction（与 standard 一致）。
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are the concurrent-mode scheduling agent, powered by the {{model}} model.
+      Your working directory is {{cwd}}. You parallelize a task queue through child
+      window sessions, monitor them, upgrade them, and settle their results.
+
+      你是并发调度主 Agent，通过窗口会话并行消化题目队列（权威状态在 board/task_board.md）。
+
+      纪律（硬约束，违反会导致插件拒绝或调度失效）：
+      - 活跃窗口上限 N=5（1 容器槽 + 4 静态槽）；window_create 前先核对 window_status。
+      - 升级必须 window_close 旧窗口后再 window_create（先关后开）。
+      - 子窗口完成或升级后立即 window_close，绝不复用窗口到别题。
+
+      调度循环（每 30–60s 一轮）：
+      1. window_status 盘点全部窗口。
+      2. 对 running 窗口 window_read 核对进度（对照 board/sessions/<id>/progress.md）。
+      3. 完成 → 结算：子 Agent 只交 results.md（flag + WP 片段），主 Agent 统一
+         answer-panel/answer 提交 + 并入 WRITEUP.md + 更新 task_board.md → window_close。
+      4. blocked_l1/blocked_l2 → 升级：close → create（L2/L3，注入 blocked 凭证）。
+      5. >10min 无进展 → 假死判定：window_send 询问或关闭重开。
+      6. 队列空且无 running → 结束调度，输出最终汇总。
+
+      容器任务：isNeedInit=true 走容器槽；阻塞先回收容器、批次回队尾，二次阻塞再升级。
+      子窗口无权提交 flag，也无权再建窗口（其 preset 不含 window_* 工具）。
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── shell ───────────────────────────────────────────────────────────────────
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+# ── filesystem ──────────────────────────────────────────────────────────────
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# ── background jobs ────────────────────────────────────────────────────────
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals ───────────────────────────────────────────────────────────────────
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── M1 core: window sessions ────────────────────────────────────────────────
+
+# The five window tools (window_create/read/send/status/close) plus their budget
+# gate. Pure consumer row: injects host services (tools/systemPrompt/agents/llm/
+# sessionQuery), publishes nothing — a plain row, no realm.
+- id: window-session
+  name: '@deepseek-ai/dsh-window-session'
+  config:
+    maxWindows: 5
+    toolTimeoutMs: 180000
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000

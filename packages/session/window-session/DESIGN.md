@@ -5,7 +5,8 @@
 > 获得创建普通窗口会话（子 Agent）、通信介入、监控读取、任务分发四项能力。
 > 状态：**S0 已解决（§13）**，实现蓝图已定（§14）；**M0-A 完成**（五工具编译通过 + 单测通过），
 > **M0-B 插件边界集成测试完成**（mock 边界服务挂载五工具，10/10 测试通过）；真机 agent-loop 验证留待 M1。
-> **M1 并发业务层设计草案已完成（§15）**：预设组合骨架 + 调度协议 + 状态机 + 编排提示词。
+> **M1 并发业务层设计草案已完成（§15）**：预设组合骨架 + 调度协议 + 状态机 + 编排提示词；
+> **并发模式 preset 已落盘并通过 `standingKeyFor` 挂载校验**（§15.7）。
 > 实现进度见 §12。
 > 实现形态修正：本插件落地为 DSH monorepo 的一个**真实 Host 包**
 > `@deepseek-ai/dsh-window-session`（`packages/session/window-session/`），
@@ -247,7 +248,7 @@ running/idle --超时无进展--> stalled（心跳标记，供主 Agent 轮询�
 | 脚手架 | 真实 Host 包 `@deepseek-ai/dsh-window-session` + 五工具注册 + tsconfig 引用 | 包纳入仓库、lint/typecheck 通过 | ✅ 已提交（`5874f94449` + `5ea4bcf031`） |
 | M0-A 建窗 | `window_create` + `window_read` 闭环 + 预算闸/归属 + 单测 | 五工具 `tsc -b` EXIT 0；`vitest` 5/5 通过 | ✅ 已提交（`cd1df76561`） |
 | M0-B 集成验证 | `window_send`(steer)/`window_status`/`window_close` 真机验证 | 在真实 host + agent-loop + 模型下建窗/续派/介入/关窗全通 | 🟡 插件边界集成 ✅（mock 边界服务挂载五工具：注册/建窗/状态/续派/模型路由/归属拒绝/预算/关窗 5 例全通，`vitest` 10/10）；真机验证留待 M1 |
-| M1 并发业务 | 接上主 Agent 队列/升级/提交（v0.2 M1/M2） | 活跃窗口恒 ≤ N；C=1+4 两队列收敛 | 🟡 业务层设计草案完成（§15）；preset 落盘 + 真机验证待实施 |
+| M1 并发业务 | 接上主 Agent 队列/升级/提交（v0.2 M1/M2） | 活跃窗口恒 ≤ N；C=1+4 两队列收敛 | 🟡 业务层设计完成（§15）+ 并发 preset 落盘且 `standingKeyFor` 挂载校验 ✅（`~/.dsh/.agent-presets/concurrent`，示例入仓库）；真机/冒烟待实施 |
 
 > 注：`window_create`/`window_send`/`window_close`/`window_status` 的完整逻辑在 S0/M0-A
 > 阶段已一并写入 `src/operations.ts`；纯逻辑（预算闸、归属校验、digest 折叠）与插件边界
@@ -521,8 +522,13 @@ window_read 轮询进度；window_send 续派/介入；window_close 回收；win
 
 ### 15.7 M1 实现清单（后续阶段）
 
-1. 并发模式 preset 落盘：`copy(standard)` → 增 `window-session` 行 + 编排提示词 →
-   `standingKeyFor` 挂载校验；
+1. ✅ 并发模式 preset 落盘并**挂载校验通过**：
+   - 用户根 `~/.dsh/.agent-presets/concurrent/`（`preset.yml` + `agent.cordis.yml`）；
+   - `standingKeyFor('concurrent')` → `{"agentPreset":"concurrent"}`，全部行激活、无泄漏服务
+     （2025-08-18，动态探针 `preset_probe` 实测）；
+   - 版本化示例入仓库：`packages/session/window-session/examples/concurrent-preset/`；
+   - 前置接线：`@deepseek-ai/dsh-window-session` 已链接进 `apps/cli/node_modules/@deepseek-ai/`
+     （行包解析锚点），包自身 node_modules 补齐 4 个运行时依赖链接（schemastery/dsh-tools/dsh-llm/dsh-agent）。
 2. 真机集成：真实 host + 模型下跑通 建窗/续派/介入/升级/关窗 闭环（§12 M0-B 余项）；
 3. 主 Agent 队列收敛冒烟：C=1+4 小批（N=5）自测两队列收敛。
 

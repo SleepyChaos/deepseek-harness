@@ -1,0 +1,2 @@
+name: 并发模式
+description: 并发调度主 Agent（M1 草案）：通过窗口会话并行消化题目队列（C=1+4 槽位、能力梯度升级、批次回收再派发），基于 dsh-window-session 五工具。
