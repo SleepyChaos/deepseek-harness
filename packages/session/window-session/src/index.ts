@@ -9,6 +9,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-session'
 import {
   windowCreateParameters,
   windowReadParameters,
@@ -28,7 +29,7 @@ import {
   type SessionQueryService,
   type PresetService,
 } from './operations.ts'
-import { createRegistry } from './registry.ts'
+import { createRegistry, touchActivity } from './registry.ts'
 
 /** Cordis plugin name used by Loader diagnostics. */
 export const name = 'window-session'
@@ -80,6 +81,15 @@ export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
   const deps = resolveDeps(ctx)
   const store = createRegistry(resolved.maxWindows)
+
+  // Live activity feed (D): a tracked child's own surface events advance its
+  // lastActivity without any orchestrator tool call, so the scheduler can
+  // detect stalls (假死判定, §14.6). Global so child sessions created under the
+  // registry root are visible from this preset's scope; filtered by registry
+  // membership. Fiber-owned: unwinds with this plugin.
+  ctx.on('session/event', (session, _event) => {
+    if (store.entries.has(session.id)) touchActivity(store, session.id)
+  }, { global: true })
 
   ctx.systemPrompt.section({
     name: 'tool:window-session',

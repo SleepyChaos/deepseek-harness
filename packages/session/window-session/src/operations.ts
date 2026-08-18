@@ -367,6 +367,7 @@ export async function executeStatus(
       reasoningEffort: w.reasoningEffort,
       status: w.status,
       taskSummary: w.taskSummary,
+      lastActivity: w.lastActivity,
     })),
   })
 }

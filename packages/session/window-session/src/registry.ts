@@ -61,13 +61,10 @@ export function unregisterWindow(store: RegistryStore, sessionId: string): boole
   return store.entries.delete(sessionId)
 }
 
-/** Update status of an existing window. */
+/** Update status of an existing window (observation only — no activity bump). */
 export function updateStatus(store: RegistryStore, sessionId: string, status: WindowInfo['status']): void {
   const info = store.entries.get(sessionId)
-  if (info !== undefined) {
-    info.status = status
-    info.lastActivity = Date.now()
-  }
+  if (info !== undefined) info.status = status
 }
 
 /** Touch last activity without changing status. */

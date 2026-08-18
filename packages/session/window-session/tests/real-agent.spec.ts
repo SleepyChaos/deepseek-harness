@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox, type Agent, type AgentHandle, type CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
-import { CallId, createAssistantMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
+import { CallId, createAssistantMessage, createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
@@ -214,6 +214,29 @@ describe('window-session against the real AgentRegistry', () => {
 
     const live = mounted.ctx.agents.get(SessionId(sessionId))
     expect(live?.session.header.agentPreset).toBe('minimal')
+  })
+
+  it('D: child autonomous surface events advance lastActivity via session/event', async () => {
+    const mounted = await mount()
+
+    await mounted.call('window_create', { preset: 'minimal' }, 'orchestrator')
+    const beforeStatus = json((await mounted.call('window_status', {}, 'orchestrator')).text)
+    const beforeWindows = beforeStatus.windows as Array<Record<string, unknown>> | undefined
+    const sessionId = String(beforeWindows?.[0]?.sessionId)
+    const before = Number(beforeWindows?.[0]?.lastActivity ?? 0)
+
+    // Child works on its own — appends a surface event with no orchestrator
+    // tool call in between.
+    await new Promise(resolve => setTimeout(resolve, 5))
+    const child = mounted.ctx.agents.get(SessionId(sessionId))
+    child?.session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'child autonomous progress' }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+
+    const afterStatus = json((await mounted.call('window_status', {}, 'orchestrator')).text)
+    const afterWindows = afterStatus.windows as Array<Record<string, unknown>> | undefined
+    expect(Number(afterWindows?.[0]?.lastActivity ?? 0)).toBeGreaterThan(before)
   })
 })
 
