@@ -22,10 +22,18 @@ interface ScriptedAgent {
   cancel(cause: unknown): void
 }
 
+interface CreateCall {
+  sessionId: string
+  agentOptions?: { provider?: string; model?: string }
+  meta?: Record<string, unknown>
+}
+
 interface Mounted {
   ctx: Context
   created: ScriptedAgent[]
   disposed: string[]
+  createCalls: CreateCall[]
+  llmCalls: LlmCallConfig[]
   call: (name: string, args: Record<string, unknown>, callerId: string) => Promise<{ text: string; isError: boolean }>
 }
 
@@ -48,9 +56,12 @@ async function mount(maxWindows = 5): Promise<Mounted> {
   const live = new Map<string, ScriptedAgent>()
   const created: ScriptedAgent[] = []
   const disposed: string[] = []
+  const createCalls: CreateCall[] = []
+  const llmCalls: LlmCallConfig[] = []
 
   ctx.provide('agents', {
-    async create(options: { sessionId: string }) {
+    async create(options: CreateCall) {
+      createCalls.push(options)
       const agent: ScriptedAgent = {
         id: options.sessionId,
         status: 'idle',
@@ -85,6 +96,7 @@ async function mount(maxWindows = 5): Promise<Mounted> {
 
   ctx.provide('llm', {
     async resolveCallConfig(config: LlmCallConfig): Promise<LlmCallConfig> {
+      llmCalls.push(config)
       return { ...config, provider: config.provider, model: config.model }
     },
   })
@@ -110,6 +122,8 @@ async function mount(maxWindows = 5): Promise<Mounted> {
     ctx,
     created,
     disposed,
+    createCalls,
+    llmCalls,
     call: async (name, args, callerId) => {
       const result = await ctx.tools.execute({
         name,
@@ -201,6 +215,27 @@ describe('window-session tools (mocked boundary services)', () => {
     const deniedClose = json((await mounted.call('window_close', { sessionId }, 'mallory')).text)
     expect(deniedClose.error).toBe('window-not-owned')
     expect(mounted.disposed).toHaveLength(0)
+  })
+
+  it('routes an explicit model selection through llm.resolveCallConfig', async () => {
+    const mounted = await mount()
+
+    const created = json((await mounted.call('window_create', {
+      preset: 'minimal',
+      provider: 'deepseek',
+      model: 'deepseek-reasoner',
+      reasoningEffort: 'high',
+    }, 'orchestrator')).text)
+    expect(created.model).toBe('deepseek-reasoner')
+    expect(created.provider).toBe('deepseek')
+    expect(created.reasoningEffort).toBe('high')
+
+    expect(mounted.llmCalls).toHaveLength(1)
+    expect(mounted.llmCalls[0]?.model).toBe('deepseek-reasoner')
+    expect(mounted.createCalls[0]?.agentOptions).toEqual({
+      provider: 'deepseek',
+      model: 'deepseek-reasoner',
+    })
   })
 
   it('enforces the concurrency budget at the tool boundary', async () => {
