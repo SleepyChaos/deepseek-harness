@@ -5,6 +5,7 @@
 > 获得创建普通窗口会话（子 Agent）、通信介入、监控读取、任务分发四项能力。
 > 状态：**S0 已解决（§13）**，实现蓝图已定（§14）；**M0-A 完成**（五工具编译通过 + 单测通过），
 > **M0-B 插件边界集成测试完成**（mock 边界服务挂载五工具，10/10 测试通过）；真机 agent-loop 验证留待 M1。
+> **M1 并发业务层设计草案已完成（§15）**：预设组合骨架 + 调度协议 + 状态机 + 编排提示词。
 > 实现进度见 §12。
 > 实现形态修正：本插件落地为 DSH monorepo 的一个**真实 Host 包**
 > `@deepseek-ai/dsh-window-session`（`packages/session/window-session/`），
@@ -246,7 +247,7 @@ running/idle --超时无进展--> stalled（心跳标记，供主 Agent 轮询�
 | 脚手架 | 真实 Host 包 `@deepseek-ai/dsh-window-session` + 五工具注册 + tsconfig 引用 | 包纳入仓库、lint/typecheck 通过 | ✅ 已提交（`5874f94449` + `5ea4bcf031`） |
 | M0-A 建窗 | `window_create` + `window_read` 闭环 + 预算闸/归属 + 单测 | 五工具 `tsc -b` EXIT 0；`vitest` 5/5 通过 | ✅ 已提交（`cd1df76561`） |
 | M0-B 集成验证 | `window_send`(steer)/`window_status`/`window_close` 真机验证 | 在真实 host + agent-loop + 模型下建窗/续派/介入/关窗全通 | 🟡 插件边界集成 ✅（mock 边界服务挂载五工具：注册/建窗/状态/续派/模型路由/归属拒绝/预算/关窗 5 例全通，`vitest` 10/10）；真机验证留待 M1 |
-| M1 并发业务 | 接上主 Agent 队列/升级/提交（v0.2 M1/M2） | 活跃窗口恒 ≤ N；C=1+4 两队列收敛 | ⬜ |
+| M1 并发业务 | 接上主 Agent 队列/升级/提交（v0.2 M1/M2） | 活跃窗口恒 ≤ N；C=1+4 两队列收敛 | 🟡 业务层设计草案完成（§15）；preset 落盘 + 真机验证待实施 |
 
 > 注：`window_create`/`window_send`/`window_close`/`window_status` 的完整逻辑在 S0/M0-A
 > 阶段已一并写入 `src/operations.ts`；纯逻辑（预算闸、归属校验、digest 折叠）与插件边界
@@ -411,6 +412,119 @@ window_read 轮询进度；window_send 续派/介入；window_close 回收；win
 - 归属：`owner = exec.agent?.session.id`（调用方主会话）；`send/close` 要求目标在 registry
   且 `owner` 匹配，否则抛 `window-not-owned`。
 - `lastActivity`：由 `window_read`/`session/event`（M0 可选订阅）更新，供假死判定。
+
+---
+
+## 15. M1 并发业务层设计（主 Agent 预设 + 调度协议）
+
+> 配套：《DESIGN_并发Agent预设方案.md》§5–§10（队列模型 / 并发调度 / 能力梯度 /
+> 调度循环 / md 协议 / 会话生命周期）。本节约束五工具与「并发模式」主 Agent 的接法，
+> 是 M0 插件能力之上的**业务编排层**设计。
+
+### 15.1 目标与范围
+
+把五个窗口工具接入「并发模式」主 Agent，实现 C=1+4 批次调度（1 容器槽 + 4 静态槽，
+总活跃窗口 N=5）、能力梯度 L1→L2→L3 逐级升级、批次完成即提交回收。产出物三件：
+
+1. 并发模式 preset 组合骨架（`agent.cordis.yml`，§15.2）；
+2. 工具 ↔ 业务循环映射与状态机（§15.3–15.4）；
+3. 编排提示词草案（§15.5）。
+
+插件层（M0 已完成）提供硬约束：预算闸 `active ≤ maxWindows`、归属校验、模型/effort
+路由；M1 只负责**编排纪律**，不重复实现安全边界。
+
+### 15.2 并发模式 preset 组合骨架
+
+```yaml
+# 并发模式 agent.cordis.yml（M1 草案；从 standard 拷贝演进）
+- id: window-session                # 本包：五工具 + 引导（§14.5）
+  name: '@deepseek-ai/dsh-window-session'
+  config:
+    maxWindows: 5                   # N = 1 容器槽 + 4 静态槽
+    toolTimeoutMs: 180000
+
+# 其余行沿用 standard 的宿主消费行（bash/editor/jobs/goal/...），
+# 均不发布服务 → 普通 row，不 isolate（与 skill 平面规则一致）。
+```
+
+组合要点：
+
+- **本包只消费不提供服务**（消费 `tools/systemPrompt/agents/llm/sessionQuery`），
+  因此是普通 row，**不需要** `isolate` realm。
+- **子窗口 preset（极简）绝不挂载本包**：子窗口因此没有 `window_*` 工具，
+  从工具面杜绝递归建窗（防增生，见 §10）。
+- `board/` 文档协议不需要额外行（共享文件系统工作区，v0.2 §9）。
+- 若 M2 需要向其他 Agent 暴露编排状态服务，再引入 `isolate` realm 包裹。
+
+### 15.3 调度协议（工具 ↔ 业务循环映射）
+
+| 循环步骤（v0.2 §8） | 工具 | 说明 |
+|---|---|---|
+| 初始派发（开局） | `window_create` × (C + 4) | 注入 `task.md` 任务卡（§9.3）；model/effort 按 L1 组合 |
+| 周期盘点 | `window_status` | 一次取全部活动窗口（id/preset/model/status/task） |
+| 进度核对 | `window_read` | 对 running 窗口拉 surface 摘要，与 `progress.md` 比对 |
+| 介入 / 续派 / 假死唤醒 | `window_send` | 追加指令（followup）或 `steer:true` 打断当前 turn |
+| 升级 | `window_close` + `window_create` | **先关后开**；`blocked/<题>.md` 凭证经 taskCard 注入 |
+| 完成回收 | `window_close` | 结算（flag 提交 + WP 并入 WRITEUP.md）后关闭，释放槽位 |
+
+### 15.4 队列 / 升级 / 提交状态机
+
+- 窗口生命周期：`created → running → {done | blocked_l1 | blocked_l2 | stalled} → closed`
+- 题目状态（权威在 `board/task_board.md`）：
+  `queued / assigned / in_progress / blocked_l1 / blocked_l2 / done / abandoned`
+- 升级阶梯（v0.2 §7.1）：L1 `deepseek-v4-flash-0731` + 极简 → L2 `deepseek-v4-pro-0813` + 标准(high)
+  → L3 `ZHIPU/GLM-5.3` + 标准(最高)。经 `window_create` 的
+  `preset / provider / model / reasoningEffort` 参数下发（sp1 已定，真能力而非近似）。
+- 升级触发：子 Agent 回报 `blocked_l1` → 主 Agent 关旧窗开 L2 窗续解；L2 再阻塞升 L3。
+  升级窗口不再回退到 L1。
+- 容器任务特殊：阻塞 → 关窗 + 回收容器（`recover-exercise-env`）→ 批次回容器队列末尾
+  （不立即占高能力槽）；**二次阻塞**才升级。
+- 不变式：① `active ≤ N`（插件硬闸 + 主 Agent 纪律双保险）；② **close 先于 create**；
+  ③ **完成即 close**，窗口绝不复用到别题（杜绝上下文污染）。
+
+### 15.5 编排提示词草案（PROMPT_TEXT v2）
+
+```text
+你是「并发模式」调度主 Agent，通过窗口会话并行消化题目队列。
+
+纪律（硬约束，违反会导致插件拒绝或调度失效）：
+- 活跃窗口上限 N=5（1 容器槽 + 4 静态槽）；window_create 前先核对 window_status。
+- 升级必须 window_close 旧窗口后再 window_create 新窗口（先关后开）。
+- 子窗口完成或升级后立即 window_close，绝不复用窗口到别题。
+
+调度循环（每 30–60s 一轮）：
+1. window_status 盘点全部窗口。
+2. 对 running 窗口 window_read 核对进度（对照 board/sessions/<id>/progress.md）。
+3. 完成 → 结算：子 Agent 只交 results.md（flag + WP 片段），主 Agent 统一
+   answer-panel/answer 提交 + 并入 WRITEUP.md + 更新 task_board.md → window_close。
+4. blocked_l1/blocked_l2 → 升级流程（§15.4）：close → create（L2/L3，注入 blocked 凭证）。
+5. >10min 无进展 → 判定假死：window_send 询问或关闭重开。
+6. 队列空且无 running → 结束调度，输出最终汇总。
+
+容器任务：isNeedInit=true 的题走容器槽；阻塞先回收容器、批次回队尾，二次阻塞再升级。
+子窗口无权提交 flag，也无权再建窗口（其 preset 不含 window_* 工具）。
+```
+
+### 15.6 验收标准与风险
+
+| 验收项 | 判定 |
+|---|---|
+| 窗口恒 ≤ N | 任一时刻 `window_status.active ≤ 5`（插件硬闸兜底） |
+| 两队列收敛 | 队列空且无 running 时输出汇总；无窗口悬挂 |
+| 升级路径 | `blocked_l1` 凭证 → L2 窗口续解 → `done`（可审计：blocked 文档 + 新窗口 task.md） |
+
+风险与对策：
+
+- **模型不守纪律** → 插件预算闸/归属是硬回退（M0 已实现，不依赖模型自觉）。
+- **轮询成本** → `window_status` 一次取全局；周期 30–60s 用后台 job 非阻塞等待。
+- **升级上下文丢失** → `blocked/*.md` 是文件系统转交凭证，不依赖对话记忆。
+
+### 15.7 M1 实现清单（后续阶段）
+
+1. 并发模式 preset 落盘：`copy(standard)` → 增 `window-session` 行 + 编排提示词 →
+   `standingKeyFor` 挂载校验；
+2. 真机集成：真实 host + 模型下跑通 建窗/续派/介入/升级/关窗 闭环（§12 M0-B 余项）；
+3. 主 Agent 队列收敛冒烟：C=1+4 小批（N=5）自测两队列收敛。
 
 ---
 
