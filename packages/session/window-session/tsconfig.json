@@ -1,0 +1,19 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../core/session" },
+    { "path": "../../core/tools" },
+    { "path": "../../core/system-prompt" },
+    { "path": "../../llm/llm" },
+    { "path": "../session-query" },
+    { "path": "../agent-presets" },
+    { "path": "../../util/timeout" }
+  ]
+}
