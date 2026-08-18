@@ -7,7 +7,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { defineTool, type ToolOutputDefinition } from '@deepseek-ai/dsh-tools'
+import { defineTool } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 import {
   windowCreateParameters,
   windowReadParameters,
@@ -59,7 +60,7 @@ interface ResolvedConfig {
   readonly toolTimeoutMs: number
 }
 
-const TEXT_OUTPUT: ToolOutputDefinition = {
+const TEXT_OUTPUT = {
   schema: { type: 'string' as const },
   render(_args: unknown, value: string) {
     return [{ type: 'text' as const, text: value }]

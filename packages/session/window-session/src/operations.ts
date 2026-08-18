@@ -180,9 +180,9 @@ export async function executeCreate(
   try {
     handle = await deps.agents.create({
       sessionId,
-      agentOptions: effectiveModel === null
-        ? undefined
-        : { provider: effectiveModel.provider, model: effectiveModel.model },
+      ...(effectiveModel === null
+        ? {}
+        : { agentOptions: { provider: effectiveModel.provider, model: effectiveModel.model } }),
       meta,
       setup,
     })

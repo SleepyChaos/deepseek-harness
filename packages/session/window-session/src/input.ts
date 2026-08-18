@@ -6,7 +6,7 @@
  */
 
 const TARGET_SESSION_PARAM = {
-  sessionId: { type: 'string', description: 'Target child-window session id.' },
+  sessionId: { type: 'string', required: true, description: 'Target child-window session id.' },
 } as const
 
 export const windowCreateParameters = {
