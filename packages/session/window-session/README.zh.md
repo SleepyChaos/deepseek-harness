@@ -16,9 +16,9 @@
 | 工具 | 作用 | 关键行为 |
 |---|---|---|
 | `window_create` | 使用预设/模型派生子会话 | 通过 `llm.resolveCallConfig` 校验模型；安装 `installModelSelection` 选择引用 + 预设挂载；可选注入首条任务卡 |
-| `window_read` | 读取子窗口的当前模型面为紧凑文本 | 通过 `sessionQuery.readSurface()` 拉取并折叠事件（user/assistant/tool-result）；不可读时降级为状态报告 |
+| `window_read` | 读取子窗口当前或最终模型面为紧凑文本 | 无论子窗口 running 还是 idle 都通过 `sessionQuery.readSurface()` 拉取并折叠事件（user/assistant/tool-result）；不可读时降级为状态报告 |
 | `window_send` | 向子窗口追加 follow-up 或 steer | 归属校验；调用 `agent.followup()` 或 `agent.steer()` |
-| `window_close` | 停止子窗口、释放预算槽位 | `cancel('closed-by-tool')` + `handle.dispose()`；从注册表移除 |
+| `window_close` | 停止子窗口、可选归档并释放预算槽位 | `archive: true` 时先通过 `workspaceRegistry` 持久化归档，再调用 `cancel('closed-by-tool')` + `handle.dispose()`；关闭失败会返回错误并保留注册表条目供重试 |
 | `window_status` | 列出所有已跟踪窗口的摘要 | 刷新实时状态后返回快照 |
 
 所有工具以 JSON 文本形式返回结果。M0 阶段不使用结构化输出或 UI 呈现钩子。
@@ -36,11 +36,19 @@
 - 停止或更新本插件不会销毁运行中的子窗口。
 - 子会话始终可见于 GUI 会话列表，即使插件卸载也可继续使用。
 
+## 设计文档
+
+参见 [`DESIGN.md`](./DESIGN.md)，包含完整的 Spike S0 结论和实现蓝图。
+
 ## 模型体验
 
 ### 系统提示
 
 #### 模型看到的内容
+
+插件挂载后，会在调度 Agent 的系统提示中加入以下稳定引导：
+
+##### 系统提示引导
 
 ```markdown
 Use window_create to launch a new child window session with a specific preset. Monitor progress with window_read after each step. Use window_send to dispatch follow-up instructions or steer an active turn. Use window_status to see all active windows at once. Use window_close when a child finishes its work to free a slot. At most one concurrent window per budget unit.
@@ -50,10 +58,10 @@ Use window_create to launch a new child window session with a specific preset. M
 
 每请求一行固定约 90 token 的引导段，插件挂载期间持续生效。
 
-### KV Cache 影响
+#### KV Cache 影响
 
 插件定义和引导文本不变时前缀稳定。
 
-## 设计文档
+## 已知限制与后续工作
 
-参见 [`DESIGN.md`](./DESIGN.md)，包含完整的 Spike S0 结论和实现蓝图。
+- 宿主组合默认不挂载并发窗口工具；宿主必须显式选择或复制示例预设。客户端监控面板以及插件重载后的持久化注册表恢复仍待后续实现。

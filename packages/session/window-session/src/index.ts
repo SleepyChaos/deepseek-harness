@@ -28,6 +28,7 @@ import {
   type LlmService,
   type SessionQueryService,
   type PresetService,
+  type WorkspaceRegistryService,
 } from './operations.ts'
 import { createRegistry, touchActivity } from './registry.ts'
 
@@ -40,7 +41,7 @@ export const DEFAULT_MAX_WINDOWS = 5
 export const DEFAULT_TOOL_TIMEOUT_MS = 180_000
 
 /** Hard-dependency services the plugin waits for before apply(). */
-export const inject = ['tools', 'systemPrompt', 'agents', 'llm', 'sessionQuery']
+export const inject = ['tools', 'systemPrompt', 'agents', 'llm', 'sessionQuery', 'agentPresets']
 
 /** Deployment-owned bounds. */
 export interface Config {
@@ -121,7 +122,7 @@ export function apply(ctx: Context, config: Config): void {
     parameters: windowSendParameters,
     output: TEXT_OUTPUT,
     timeoutMs: resolved.toolTimeoutMs,
-    execute: (args, exec) => executeSend(args, exec, deps, store),
+    execute: (args, exec) => Promise.resolve(executeSend(args, exec, deps, store)),
   }))
 
   ctx.tools.register(defineTool({
@@ -139,7 +140,7 @@ export function apply(ctx: Context, config: Config): void {
     parameters: windowStatusParameters,
     output: TEXT_OUTPUT,
     timeoutMs: resolved.toolTimeoutMs,
-    execute: (_args, exec) => executeStatus(exec, deps, store),
+    execute: (_args, exec) => Promise.resolve(executeStatus(exec, deps, store)),
   }))
 }
 
@@ -164,8 +165,9 @@ function resolveDeps(ctx: Context): CtxDeps {
   const llm = ctx.get('llm') as unknown as LlmService | undefined
   const sessionQuery = ctx.get('sessionQuery') as unknown as SessionQueryService | undefined
   const agentPresets = ctx.get('agentPresets') as unknown as PresetService | undefined
-  if (agents === undefined || llm === undefined || sessionQuery === undefined) {
-    throw new Error('window-session: agents/llm/sessionQuery services are not mounted')
+  const workspaceRegistry = ctx.get('workspaceRegistry') as unknown as WorkspaceRegistryService | undefined
+  if (agents === undefined || llm === undefined || sessionQuery === undefined || agentPresets === undefined) {
+    throw new Error('window-session: agents/llm/sessionQuery/agentPresets services are not mounted')
   }
-  return { agents, llm, sessionQuery, agentPresets: agentPresets ?? null }
+  return { agents, llm, sessionQuery, agentPresets, workspaceRegistry: workspaceRegistry ?? null }
 }

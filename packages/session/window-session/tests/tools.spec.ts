@@ -32,6 +32,7 @@ interface Mounted {
   ctx: Context
   created: ScriptedAgent[]
   disposed: string[]
+  archived: string[]
   createCalls: CreateCall[]
   llmCalls: LlmCallConfig[]
   call: (name: string, args: Record<string, unknown>, callerId: string) => Promise<{ text: string; isError: boolean }>
@@ -56,6 +57,7 @@ async function mount(maxWindows = 5): Promise<Mounted> {
   const live = new Map<string, ScriptedAgent>()
   const created: ScriptedAgent[] = []
   const disposed: string[] = []
+  const archived: string[] = []
   const createCalls: CreateCall[] = []
   const llmCalls: LlmCallConfig[] = []
 
@@ -115,6 +117,11 @@ async function mount(maxWindows = 5): Promise<Mounted> {
       return { id }
     },
   })
+  ctx.provide('workspaceRegistry', {
+    async archiveSession(sessionId: string) {
+      archived.push(sessionId)
+    },
+  })
 
   await ctx.plugin(WindowSession, { maxWindows })
 
@@ -122,6 +129,7 @@ async function mount(maxWindows = 5): Promise<Mounted> {
     ctx,
     created,
     disposed,
+    archived,
     createCalls,
     llmCalls,
     call: async (name, args, callerId) => {
@@ -215,6 +223,17 @@ describe('window-session tools (mocked boundary services)', () => {
     const deniedClose = json((await mounted.call('window_close', { sessionId }, 'mallory')).text)
     expect(deniedClose.error).toBe('window-not-owned')
     expect(mounted.disposed).toHaveLength(0)
+  })
+
+  it('archives before closing when requested', async () => {
+    const mounted = await mount()
+    const created = json((await mounted.call('window_create', { preset: 'minimal' }, 'orchestrator')).text)
+    const sessionId = String(created.sessionId)
+
+    const closed = json((await mounted.call('window_close', { sessionId, archive: true }, 'orchestrator')).text)
+    expect(closed).toMatchObject({ closed: true, archived: true })
+    expect(mounted.archived).toEqual([sessionId])
+    expect(mounted.disposed).toEqual([sessionId])
   })
 
   it('routes an explicit model selection through llm.resolveCallConfig', async () => {

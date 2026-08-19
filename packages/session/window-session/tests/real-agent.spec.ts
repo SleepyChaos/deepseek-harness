@@ -183,8 +183,10 @@ describe('window-session against the real AgentRegistry', () => {
 
     // window_read folds REAL surface events (user/message + assistant/message)
     // from the real session-query engine.
+    const liveAgent = live as unknown as { status: 'idle' | 'running' }
+    liveAgent.status = 'idle'
     const read = json((await mounted.call('window_read', { sessionId }, 'orchestrator')).text)
-    expect(read.status).toBe('running')
+    expect(read.status).toBe('idle')
     const fold = String(read.fold)
     expect(fold).toContain('solve the pwn challenge')
     expect(fold).toContain('scripted answer to solve the pwn challenge')

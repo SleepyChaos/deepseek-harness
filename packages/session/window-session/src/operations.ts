@@ -5,6 +5,7 @@
  * calling execution identity, the bound service deps, and the mutable registry.
  */
 
+import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   createUserMessage,
@@ -79,37 +80,65 @@ export interface PresetService {
   resolve(id?: string): Promise<{ id: string }>
 }
 
+/** The optional host service used to persist the `window_close archive` flag. */
+export interface WorkspaceRegistryService {
+  archiveSession(sessionId: string): Promise<void>
+}
+
 /** The deps resolved once in apply() and threaded into every operation. */
 export interface CtxDeps {
   agents: AgentsService
   llm: LlmService
   sessionQuery: SessionQueryService
-  agentPresets: PresetService | null
+  agentPresets: PresetService
+  workspaceRegistry: WorkspaceRegistryService | null
 }
 
 /** Caller identity taken from the tool execution context. */
-export type CallerIdentity = { agent?: { session: { id: string } } }
+export type CallerIdentity = {
+  agent?: { session: { id: string; header?: { cwd?: string } } }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function callerOf(exec: CallerIdentity): string {
-  return exec.agent?.session.id ?? 'unknown'
+function callerOf(exec: CallerIdentity): string | null {
+  return exec.agent?.session.id ?? null
 }
 
-function ownedError(store: RegistryStore, sessionId: string, caller: string): string | null {
+type OwnershipErrorCode = 'window-not-found' | 'window-not-owned' | 'window-no-caller'
+
+function ownedError(
+  store: RegistryStore,
+  sessionId: string,
+  caller: string | null,
+): { error: OwnershipErrorCode; message: string } | null {
+  if (caller === null) {
+    return {
+      error: 'window-no-caller',
+      message: 'window tools require a live caller session; refusing an anonymous owner',
+    }
+  }
   const code = assertOwned(store, sessionId, caller)
   if (code === null) return null
   return code === 'window-not-found'
-    ? `window-not-found: window "${sessionId}" was not created by this plugin.`
-    : `window-not-owned: caller "${caller}" does not own window "${sessionId}".`
+    ? { error: 'window-not-found', message: `window-not-found: window "${sessionId}" was not created by this plugin.` }
+    : { error: 'window-not-owned', message: `window-not-owned: caller "${caller}" does not own window "${sessionId}".` }
 }
 
 // ---------------------------------------------------------------------------
 // window_create
 // ---------------------------------------------------------------------------
 
+/**
+ * Create and register one child window under the caller's ownership.
+ * @param args - Preset, model, workspace, and optional task-card inputs.
+ * @param exec - Tool execution identity used for ownership and workspace defaults.
+ * @param deps - Host services used to create and compose the child.
+ * @param store - Registry carrying budget and ownership state.
+ * @returns JSON text describing the created window or a structured failure.
+ */
 export async function executeCreate(
   args: {
     preset: string
@@ -124,7 +153,20 @@ export async function executeCreate(
   store: RegistryStore,
 ): Promise<string> {
   const callerId = callerOf(exec)
+  if (callerId === null) {
+    return JSON.stringify({
+      error: 'window-no-caller',
+      message: 'window_create requires a live caller session; refusing an anonymous owner',
+    })
+  }
   const presets = deps.agentPresets
+
+  if ((args.provider === undefined) !== (args.model === undefined)) {
+    return JSON.stringify({
+      error: 'invalid-model-selection',
+      message: 'provider and model must be supplied together',
+    })
+  }
 
   // 0. Budget gate BEFORE create (avoid create-then-dispose churn) ----------
   if (activeCount(store) >= store.budget) {
@@ -159,31 +201,28 @@ export async function executeCreate(
   }
 
   // 2. Resolve the preset id before create (mirrors api-proxy composeAgent) --
-  let presetId = args.preset
-  let presetError: string | null = null
-  if (presets !== null) {
-    try {
-      presetId = (await presets.resolve(args.preset)).id
-    } catch (err: unknown) {
-      presetError = String(err)
-    }
+  let presetId: string
+  try {
+    presetId = (await presets.resolve(args.preset)).id
+  } catch (err: unknown) {
+    return JSON.stringify({ error: 'preset-unavailable', message: `could not resolve preset "${args.preset}": ${String(err)}` })
   }
 
   // 3. Compose setup: install selection + mount preset ----------------------
   const selectionRef: ModelSelectionRef | null = effectiveModel === null
     ? null
     : { current: effectiveModel, assembled: undefined }
-  const setup = (agentCtx: Context): void | Promise<void> => {
+  const setup = async (agentCtx: Context): Promise<void> => {
     if (selectionRef !== null) installModelSelection(agentCtx, selectionRef)
-    if (presets === null) return undefined
-    return presets.mount(agentCtx, presetId).then(() => undefined, () => undefined)
+    await presets.mount(agentCtx, presetId)
   }
 
   // 4. Create the agent via ctx.agents (ownerCtx = registry root, sp4) -------
-  const sessionId = `window-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-  const meta = args.cwd === undefined
+  const sessionId = `window-${randomUUID()}`
+  const cwd = args.cwd ?? exec.agent?.session.header?.cwd
+  const meta = cwd === undefined
     ? { agentPreset: presetId }
-    : { cwd: args.cwd, agentPreset: presetId }
+    : { cwd, agentPreset: presetId }
 
   let handle: CreatedHandle
   try {
@@ -215,10 +254,13 @@ export async function executeCreate(
     return JSON.stringify({ error: 'budget-exceeded', message: budgetErr })
   }
 
-  setHandle(store, { agent: { id: handle.agent.id, cancel: cause => handle.agent.cancel(cause) }, dispose: () => handle.dispose() })
+  setHandle(store, {
+    agent: { id: handle.agent.id, cancel: (cause) => { handle.agent.cancel(cause) } },
+    dispose: () => handle.dispose(),
+  })
 
   // 6. Inject the task card as the first user message ------------------------
-  let note = presetError === null ? '' : `preset-resolve-failed: ${presetError}; `
+  let note = ''
   if (args.taskCard !== undefined && args.taskCard !== '') {
     const content: ContentBlock[] = [{ type: 'text', text: args.taskCard }]
     try {
@@ -232,7 +274,7 @@ export async function executeCreate(
   return JSON.stringify({
     sessionId,
     agentPreset: presetId,
-    cwd: args.cwd ?? null,
+    cwd: cwd ?? null,
     model: effectiveModel?.model ?? null,
     provider: effectiveModel?.provider ?? null,
     reasoningEffort: effectiveModel?.reasoningEffort ?? null,
@@ -244,6 +286,14 @@ export async function executeCreate(
 // window_read
 // ---------------------------------------------------------------------------
 
+/**
+ * Read a bounded model-surface digest for an owned child window.
+ * @param args - Target session and optional tail-event count.
+ * @param exec - Tool execution identity used for ownership validation.
+ * @param deps - Host services used to read the surface and inspect status.
+ * @param store - Registry carrying ownership and activity state.
+ * @returns JSON text containing status, digest, and activity metadata.
+ */
 export async function executeRead(
   args: { sessionId: string; tailEvents?: number },
   exec: CallerIdentity,
@@ -251,28 +301,29 @@ export async function executeRead(
   store: RegistryStore,
 ): Promise<string> {
   const err = ownedError(store, args.sessionId, callerOf(exec))
-  if (err !== null) return JSON.stringify({ error: 'window-not-owned', message: err })
+  if (err !== null) return JSON.stringify(err)
 
   touchActivity(store, args.sessionId)
 
   const agent = deps.agents.get(args.sessionId)
   if (agent !== undefined) updateStatus(store, args.sessionId, agent.status)
   const info = listAll(store).find(w => w.sessionId === args.sessionId)
+  const count = args.tailEvents ?? 20
+  if (!Number.isSafeInteger(count) || count < 1) {
+    return JSON.stringify({ error: 'invalid-tail-events', message: 'tailEvents must be a positive safe integer' })
+  }
 
-  if (agent !== undefined && agent.status === 'running') {
-    try {
-      const snapshot = await deps.sessionQuery.readSurface(args.sessionId)
-      const count = args.tailEvents ?? 20
-      const folded = foldSurfaceEvents(snapshot.events.slice(-count))
-      return JSON.stringify({
-        sessionId: args.sessionId,
-        status: 'running',
-        fold: folded,
-        lastActivity: info?.lastActivity ?? Date.now(),
-      })
-    } catch {
-      // fall through to status-only response below
-    }
+  try {
+    const snapshot = await deps.sessionQuery.readSurface(args.sessionId)
+    const folded = foldSurfaceEvents(snapshot.events.slice(-count))
+    return JSON.stringify({
+      sessionId: args.sessionId,
+      status: agent?.status ?? 'not-found',
+      fold: folded,
+      lastActivity: info?.lastActivity ?? Date.now(),
+    })
+  } catch {
+    // fall through to status-only response below
   }
 
   return JSON.stringify({
@@ -287,14 +338,22 @@ export async function executeRead(
 // window_send
 // ---------------------------------------------------------------------------
 
-export async function executeSend(
+/**
+ * Queue or steer one user message into an owned live child window.
+ * @param args - Target session, text, and optional steering mode.
+ * @param exec - Tool execution identity used for ownership validation.
+ * @param deps - Host agent service used to find the child.
+ * @param store - Registry carrying ownership and activity state.
+ * @returns JSON text describing acceptance or the send failure.
+ */
+export function executeSend(
   args: { sessionId: string; text: string; steer?: boolean },
   exec: CallerIdentity,
   deps: CtxDeps,
   store: RegistryStore,
-): Promise<string> {
+): string {
   const err = ownedError(store, args.sessionId, callerOf(exec))
-  if (err !== null) return JSON.stringify({ error: 'window-not-owned', message: err })
+  if (err !== null) return JSON.stringify(err)
 
   const agent = deps.agents.get(args.sessionId)
   if (agent === undefined) {
@@ -318,23 +377,55 @@ export async function executeSend(
 // window_close
 // ---------------------------------------------------------------------------
 
+/**
+ * Archive when requested, stop, dispose, and unregister an owned child.
+ * @param args - Target session and optional durable-archive flag.
+ * @param exec - Tool execution identity used for ownership validation.
+ * @param deps - Host services used for archive and disposal.
+ * @param store - Registry carrying ownership and handle state.
+ * @returns JSON text describing closure or a retryable failure.
+ */
 export async function executeClose(
   args: { sessionId: string; archive?: boolean },
   exec: CallerIdentity,
-  _deps: CtxDeps,
+  deps: CtxDeps,
   store: RegistryStore,
 ): Promise<string> {
   const err = ownedError(store, args.sessionId, callerOf(exec))
-  if (err !== null) return JSON.stringify({ error: 'window-not-owned', message: err })
+  if (err !== null) return JSON.stringify(err)
 
-  const handle = takeHandle(store, args.sessionId)
-  if (handle !== undefined) {
-    handle.agent.cancel('closed-by-tool')
-    try {
-      await handle.dispose()
-    } catch {
-      // disposal is best-effort; the window is still removed from the registry
+  if (args.archive === true) {
+    if (deps.workspaceRegistry === null) {
+      return JSON.stringify({
+        closed: false,
+        error: 'archive-unavailable',
+        message: 'workspaceRegistry is not mounted; the session was not closed',
+      })
     }
+    try {
+      await deps.workspaceRegistry.archiveSession(args.sessionId)
+    } catch (err: unknown) {
+      return JSON.stringify({
+        closed: false,
+        error: 'archive-failed',
+        message: `could not archive window "${args.sessionId}": ${String(err)}`,
+      })
+    }
+  }
+
+  const handle = store.handles.get(args.sessionId)
+  if (handle !== undefined) {
+    try {
+      handle.agent.cancel('closed-by-tool')
+      await handle.dispose()
+    } catch (err: unknown) {
+      return JSON.stringify({
+        closed: false,
+        error: 'close-failed',
+        message: `could not close window "${args.sessionId}": ${String(err)}`,
+      })
+    }
+    takeHandle(store, args.sessionId)
   }
 
   unregisterWindow(store, args.sessionId)
@@ -345,14 +436,26 @@ export async function executeClose(
 // window_status
 // ---------------------------------------------------------------------------
 
-export async function executeStatus(
+/**
+ * Refresh and return all currently tracked child-window snapshots.
+ * @param _exec - Unused tool execution identity retained for a uniform tool signature.
+ * @param deps - Host agent service used to refresh live statuses.
+ * @param store - Registry carrying tracked windows and budget state.
+ * @returns JSON text containing the active count, limit, and window summaries.
+ */
+export function executeStatus(
   _exec: CallerIdentity,
   deps: CtxDeps,
   store: RegistryStore,
-): Promise<string> {
+): string {
   for (const w of listAll(store)) {
     const agent = deps.agents.get(w.sessionId)
-    if (agent !== undefined) updateStatus(store, w.sessionId, agent.status)
+    if (agent === undefined) {
+      store.entries.delete(w.sessionId)
+      store.handles.delete(w.sessionId)
+    } else {
+      updateStatus(store, w.sessionId, agent.status)
+    }
   }
 
   const refreshed = listAll(store)

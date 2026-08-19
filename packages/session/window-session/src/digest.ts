@@ -36,6 +36,12 @@ function sourceLabel(source: MessageSource | undefined): string {
   return '[model]'
 }
 
+/**
+ * Fold model-surface events into bounded text for a scheduling agent.
+ * @param events - Ordered surface events to summarize.
+ * @param maxChars - Maximum length of the returned digest.
+ * @returns A compact digest containing model-relevant text and tool results.
+ */
 export function foldSurfaceEvents(events: ReadonlyArray<SurfaceEventLike>, maxChars = 4000): string {
   const lines: string[] = []
 
@@ -52,11 +58,11 @@ export function foldSurfaceEvents(events: ReadonlyArray<SurfaceEventLike>, maxCh
       const text = collectText(data.message.content, ASSISTANT_TEXT_CAP)
       if (text !== '') {
         const tokens = data.usage
-          ? ` (${Object.entries(data.usage).map(([k, v]) => `${k}:${v}`).join(', ')})`
+          ? ` (${Object.entries(data.usage).map(([k, v]) => `${k}:${String(v)}`).join(', ')})`
           : ''
         lines.push(`[${data.turn}:${data.step}] ${text}${tokens}`)
       }
-    } else if (evt.type === 'tool/result') {
+    } else {
       const data = evt.data as {
         turn: number
         step: number

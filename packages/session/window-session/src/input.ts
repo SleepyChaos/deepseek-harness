@@ -9,6 +9,7 @@ const TARGET_SESSION_PARAM = {
   sessionId: { type: 'string', required: true, description: 'Target child-window session id.' },
 } as const
 
+/** JSON schema for creating a child window. */
 export const windowCreateParameters = {
   // The agent preset to compose the child from (e.g., "minimal" for 极简模式).
   preset: { type: 'string', required: true, description: 'Agent preset id applied to the new child window.' },
@@ -22,21 +23,25 @@ export const windowCreateParameters = {
   taskCard: { type: 'string', description: 'Markdown task-card text injected as the first user message.' },
 } as const
 
+/** JSON schema for reading a child window surface. */
 export const windowReadParameters = {
   ...TARGET_SESSION_PARAM,
   // How many recent surface events to fold into the digest.
   tailEvents: { type: 'integer', description: 'Max surface events in returned digest. Defaults to 20.' },
 } as const
 
+/** JSON schema for sending a message to a child window. */
 export const windowSendParameters = {
   ...TARGET_SESSION_PARAM,
   text: { type: 'string', required: true, description: 'Message text to deliver to the child.' },
   steer: { type: 'boolean', description: 'If true, send as steering (interrupt current turn); otherwise queue as follow-up.' },
 } as const
 
+/** JSON schema for closing and optionally archiving a child window. */
 export const windowCloseParameters = {
   ...TARGET_SESSION_PARAM,
   archive: { type: 'boolean', description: 'If true, archive the session via workspace registry before closing.' },
 } as const
 
+/** JSON schema for listing tracked child windows. */
 export const windowStatusParameters = {} as const

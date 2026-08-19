@@ -2993,6 +2993,24 @@ export interface Config {
 
 来源：[`packages/web/web-search-perplexity/src/index.ts:32`](../packages/web/web-search-perplexity/src/index.ts)
 
+<a id="deepseek-aidsh-window-session"></a>
+
+## `@deepseek-ai/dsh-window-session`
+
+需要：`tools` · `systemPrompt` · `agents` · `llm` · `sessionQuery` · `agentPresets`
+
+```ts config-catalog
+/** Deployment-owned bounds. */
+export interface Config {
+  /** Maximum concurrent child windows. Defaults to 5. */
+  maxWindows?: number
+  /** Cooperative deadline per tool call in milliseconds. Defaults to 180000. */
+  toolTimeoutMs?: number
+}
+```
+
+来源：[`packages/session/window-session/src/index.ts:47`](../packages/session/window-session/src/index.ts)
+
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 
 ## `@deepseek-ai/dsh-workflow-worker-thread`

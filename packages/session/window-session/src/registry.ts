@@ -32,12 +32,21 @@ export interface RegistryStore {
   handles: Map<string, WindowHandle>
 }
 
-/** Create a fresh registry scoped to one plugin mount. */
+/**
+ * Create a fresh registry scoped to one plugin mount.
+ * @param maxWindows - Maximum number of active windows in this registry.
+ * @returns The empty registry store.
+ */
 export function createRegistry(maxWindows: number): RegistryStore {
   return { entries: new Map(), budget: maxWindows, handles: new Map() }
 }
 
-/** Register a newly-created window. Returns error reason string if over-budget. */
+/**
+ * Register a newly-created window.
+ * @param store - Registry receiving the window.
+ * @param payload - Window identity and model metadata.
+ * @returns An error reason when the budget is exhausted, otherwise `null`.
+ */
 export function registerWindow(
   store: RegistryStore,
   payload: Omit<WindowInfo, 'status' | 'createdAt' | 'lastActivity'>,
@@ -56,34 +65,62 @@ export function registerWindow(
   return null
 }
 
-/** Unregister a closed window. Returns false if never registered. */
+/**
+ * Unregister a closed window.
+ * @param store - Registry containing the window.
+ * @param sessionId - Window session identity to remove.
+ * @returns Whether a registered entry was removed.
+ */
 export function unregisterWindow(store: RegistryStore, sessionId: string): boolean {
   return store.entries.delete(sessionId)
 }
 
-/** Update status of an existing window (observation only — no activity bump). */
+/**
+ * Update status of an existing window without changing activity time.
+ * @param store - Registry containing the window.
+ * @param sessionId - Window session identity to update.
+ * @param status - Newly observed agent status.
+ */
 export function updateStatus(store: RegistryStore, sessionId: string, status: WindowInfo['status']): void {
   const info = store.entries.get(sessionId)
   if (info !== undefined) info.status = status
 }
 
-/** Touch last activity without changing status. */
+/**
+ * Touch last activity without changing status.
+ * @param store - Registry containing the window.
+ * @param sessionId - Window session identity to update.
+ */
 export function touchActivity(store: RegistryStore, sessionId: string): void {
   const info = store.entries.get(sessionId)
   if (info !== undefined) info.lastActivity = Date.now()
 }
 
-/** Return a shallow array of window snapshots (pure data, no live refs). */
+/**
+ * Return a shallow array of window snapshots without live references.
+ * @param store - Registry to snapshot.
+ * @returns Pure JSON-safe window metadata.
+ */
 export function listAll(store: RegistryStore): ReadonlyArray<WindowInfo> {
   return [...store.entries.values()]
 }
 
-/** Return the active count of windows. */
+/**
+ * Return the active count of windows.
+ * @param store - Registry to count.
+ * @returns Number of registered windows.
+ */
 export function activeCount(store: RegistryStore): number {
   return store.entries.size
 }
 
-/** Ownership guard: returns an error code if caller does not own target. */
+/**
+ * Check whether a caller owns a target window.
+ * @param store - Registry containing ownership metadata.
+ * @param sessionId - Target window identity.
+ * @param callerSessionId - Calling session identity.
+ * @returns An ownership error code, or `null` when access is allowed.
+ */
 export function assertOwned(
   store: RegistryStore,
   sessionId: string,
@@ -95,12 +132,21 @@ export function assertOwned(
   return null
 }
 
-/** Stash the owned handle (for close). */
+/**
+ * Stash an owned handle for later closure.
+ * @param store - Registry receiving the handle.
+ * @param handle - Disposable agent handle to retain.
+ */
 export function setHandle(store: RegistryStore, handle: WindowHandle): void {
   store.handles.set(handle.agent.id, handle)
 }
 
-/** Retrieve and remove the handle for a window. */
+/**
+ * Retrieve and remove a window handle after successful disposal.
+ * @param store - Registry containing the handle.
+ * @param sessionId - Window identity to retrieve.
+ * @returns The handle, or `undefined` when none is retained.
+ */
 export function takeHandle(store: RegistryStore, sessionId: string): WindowHandle | undefined {
   const handle = store.handles.get(sessionId)
   if (handle !== undefined) store.handles.delete(sessionId)
