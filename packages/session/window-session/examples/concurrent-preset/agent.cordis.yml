@@ -31,7 +31,8 @@
       2. 对 running 窗口 window_read 核对进度（对照 board/sessions/<id>/progress.md）。
       3. 完成 → 结算：子 Agent 只交 results.md（flag + WP 片段），主 Agent 统一
          answer-panel/answer 提交 + 并入 WRITEUP.md + 更新 task_board.md → window_close。
-      4. blocked_l1/blocked_l2 → 升级：close → create（L2/L3，注入 blocked 凭证）。
+      4. blocked_l1/blocked_l2 → 升级：window_close 旧窗 → window_create(level: l2 / l3，
+         注入 blocked 凭证续解)。升级窗口不再回退到低档。
       5. >10min 无进展 → 假死判定：window_send 询问或关闭重开。
       6. 队列空且无 running → 结束调度，输出最终汇总。
 
@@ -113,6 +114,25 @@
   config:
     maxWindows: 5
     toolTimeoutMs: 180000
+    # 能力梯级表（v0.2 §7.1）：window_create(level: l1|l2|l3) 从这里展开
+    # preset/provider/model/reasoningEffort。请按本环境实际安装的 provider 校准。
+    defaultLevel: l1
+    levels:
+      l1:
+        preset: minimal
+        provider: deepseek
+        model: deepseek-v4-flash-0731
+        reasoningEffort: low
+      l2:
+        preset: standard
+        provider: deepseek
+        model: deepseek-v4-pro-0813
+        reasoningEffort: high
+      l3:
+        preset: standard
+        provider: zhipu
+        model: glm-5.3
+        reasoningEffort: highest
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 

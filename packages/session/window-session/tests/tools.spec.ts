@@ -122,6 +122,11 @@ async function mount(maxWindows = 5): Promise<Mounted> {
       archived.push(sessionId)
     },
   })
+  ctx.provide('agentDefaultModel', {
+    currentSelection() {
+      return { provider: 'default-provider', model: 'default-model' }
+    },
+  })
 
   await ctx.plugin(WindowSession, { maxWindows })
 
@@ -273,5 +278,46 @@ describe('window-session tools (mocked boundary services)', () => {
     expect(d.sessionId).toBeTruthy()
     expect(mounted.created).toHaveLength(3)
     expect(mounted.disposed).toEqual([String(a.sessionId)])
+  })
+
+  it('expands a level marker from the configured ladder', async () => {
+    const mounted = await mount()
+
+    const created = json((await mounted.call('window_create', { level: 'l2' }, 'orchestrator')).text)
+    expect(created.level).toBe('l2')
+    expect(created.agentPreset).toBe('standard')
+    expect(created.model).toBe('deepseek-v4-pro-0813')
+    expect(created.provider).toBe('deepseek')
+    expect(mounted.createCalls[0]?.agentOptions).toEqual({
+      provider: 'deepseek',
+      model: 'deepseek-v4-pro-0813',
+    })
+  })
+
+  it('lets an explicit model pair override the level', async () => {
+    const mounted = await mount()
+
+    const created = json((await mounted.call('window_create', {
+      level: 'l1',
+      provider: 'custom-provider',
+      model: 'custom-model',
+    }, 'orchestrator')).text)
+    expect(created.model).toBe('custom-model')
+    expect(mounted.createCalls[0]?.agentOptions).toEqual({
+      provider: 'custom-provider',
+      model: 'custom-model',
+    })
+  })
+
+  it('falls back to the deployment default model when no level is given', async () => {
+    const mounted = await mount()
+
+    const created = json((await mounted.call('window_create', {}, 'orchestrator')).text)
+    expect(created.agentPreset).toBe('minimal')
+    expect(created.model).toBe('default-model')
+    expect(mounted.createCalls[0]?.agentOptions).toEqual({
+      provider: 'default-provider',
+      model: 'default-model',
+    })
   })
 })

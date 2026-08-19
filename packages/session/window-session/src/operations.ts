@@ -80,6 +80,20 @@ export interface PresetService {
   resolve(id?: string): Promise<{ id: string }>
 }
 
+/** One rung of the ability ladder: child preset plus optional model pair and effort. */
+export interface LevelConfig {
+  preset: string
+  provider?: string
+  model?: string
+  reasoningEffort?: string
+}
+
+/** The configured level table plus the fallback level key. */
+export interface Ladder {
+  defaultLevel?: string
+  levels: Readonly<Record<string, LevelConfig>>
+}
+
 /** The optional host service used to persist the `window_close archive` flag. */
 export interface WorkspaceRegistryService {
   archiveSession(sessionId: string): Promise<void>
@@ -92,6 +106,8 @@ export interface CtxDeps {
   sessionQuery: SessionQueryService
   agentPresets: PresetService
   workspaceRegistry: WorkspaceRegistryService | null
+  /** Deployment default model selection, used when no level or explicit pair resolves one. */
+  agentDefaultModel?: { currentSelection(): ModelSelection }
 }
 
 /** Caller identity taken from the tool execution context. */
@@ -133,15 +149,17 @@ function ownedError(
 
 /**
  * Create and register one child window under the caller's ownership.
- * @param args - Preset, model, workspace, and optional task-card inputs.
+ * @param args - Level marker, preset/model overrides, workspace, and optional task-card inputs.
  * @param exec - Tool execution identity used for ownership and workspace defaults.
  * @param deps - Host services used to create and compose the child.
  * @param store - Registry carrying budget and ownership state.
+ * @param ladder - The configured ability-level table and its default level key.
  * @returns JSON text describing the created window or a structured failure.
  */
 export async function executeCreate(
   args: {
-    preset: string
+    level?: string
+    preset?: string
     provider?: string
     model?: string
     reasoningEffort?: string
@@ -151,6 +169,7 @@ export async function executeCreate(
   exec: CallerIdentity,
   deps: CtxDeps,
   store: RegistryStore,
+  ladder: Ladder,
 ): Promise<string> {
   const callerId = callerOf(exec)
   if (callerId === null) {
@@ -161,7 +180,17 @@ export async function executeCreate(
   }
   const presets = deps.agentPresets
 
-  if ((args.provider === undefined) !== (args.model === undefined)) {
+  // Resolve the ability level: explicit marker first, else the configured default.
+  const levelKey = args.level ?? ladder.defaultLevel
+  const level = levelKey === undefined ? undefined : ladder.levels[levelKey]
+
+  // Model pair: an explicit provider/model pair wins wholesale over the level's
+  // pair; reasoningEffort merges independently. A pair must be complete.
+  const explicitPair = args.provider !== undefined || args.model !== undefined
+  const provider = explicitPair ? args.provider : level?.provider
+  const model = explicitPair ? args.model : level?.model
+  const reasoningEffort = args.reasoningEffort ?? level?.reasoningEffort
+  if ((provider === undefined) !== (model === undefined)) {
     return JSON.stringify({
       error: 'invalid-model-selection',
       message: 'provider and model must be supplied together',
@@ -178,13 +207,13 @@ export async function executeCreate(
 
   // 1. Resolve the model selection (validate + canonicalize) -----------------
   let effectiveModel: ModelSelection | null = null
-  if (args.provider !== undefined && args.model !== undefined) {
+  if (provider !== undefined && model !== undefined) {
     const input: LlmCallConfig = {
-      provider: args.provider,
-      model: args.model,
-      ...(args.reasoningEffort === undefined
+      provider,
+      model,
+      ...(reasoningEffort === undefined
         ? {}
-        : { reasoningEffort: ReasoningEffortId(args.reasoningEffort) }),
+        : { reasoningEffort: ReasoningEffortId(reasoningEffort) }),
     }
     try {
       const resolved = await deps.llm.resolveCallConfig(input)
@@ -198,14 +227,19 @@ export async function executeCreate(
     } catch (err: unknown) {
       return JSON.stringify({ error: 'model-unavailable', message: `could not resolve model: ${String(err)}` })
     }
+  } else if (deps.agentDefaultModel !== undefined) {
+    // No level model and no explicit pair: the child still needs a model for
+    // prompt assembly ({{model}}), so fall back to the deployment default.
+    effectiveModel = deps.agentDefaultModel.currentSelection()
   }
 
   // 2. Resolve the preset id before create (mirrors api-proxy composeAgent) --
+  const presetRequest = args.preset ?? level?.preset ?? 'minimal'
   let presetId: string
   try {
-    presetId = (await presets.resolve(args.preset)).id
+    presetId = (await presets.resolve(presetRequest)).id
   } catch (err: unknown) {
-    return JSON.stringify({ error: 'preset-unavailable', message: `could not resolve preset "${args.preset}": ${String(err)}` })
+    return JSON.stringify({ error: 'preset-unavailable', message: `could not resolve preset "${presetRequest}": ${String(err)}` })
   }
 
   // 3. Compose setup: install selection + mount preset ----------------------
@@ -273,6 +307,7 @@ export async function executeCreate(
 
   return JSON.stringify({
     sessionId,
+    level: levelKey ?? null,
     agentPreset: presetId,
     cwd: cwd ?? null,
     model: effectiveModel?.model ?? null,

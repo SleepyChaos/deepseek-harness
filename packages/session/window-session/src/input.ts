@@ -11,12 +11,15 @@ const TARGET_SESSION_PARAM = {
 
 /** JSON schema for creating a child window. */
 export const windowCreateParameters = {
-  // The agent preset to compose the child from (e.g., "minimal" for 极简模式).
-  preset: { type: 'string', required: true, description: 'Agent preset id applied to the new child window.' },
-  // Optional explicit model routing overrides the window\'s default.
-  provider: { type: 'string', description: 'LLM provider route. Omit for auto-resolve.' },
-  model: { type: 'string', description: 'Target model id. Omit for default.' },
-  reasoningEffort: { type: 'string', description: 'Reasoning-effort level ("low", "medium", "high"). Omit for default.' },
+  // The ability level marker: "l1" | "l2" | "l3" (阻塞升级标记). The plugin
+  // expands it from the configured levels table (preset/provider/model/effort).
+  level: { type: 'string', description: 'Ability level marker ("l1" | "l2" | "l3"); expanded from the configured levels table.' },
+  // Agent preset id applied to the new child window; overrides the level's preset.
+  preset: { type: 'string', description: 'Agent preset id applied to the new child window. Omit to use the level preset.' },
+  // Optional explicit model routing overrides the level's model pair.
+  provider: { type: 'string', description: 'LLM provider route. Omit for the level (or default) provider.' },
+  model: { type: 'string', description: 'Target model id. Omit for the level (or default) model.' },
+  reasoningEffort: { type: 'string', description: 'Reasoning-effort level ("low", "medium", "high"). Omit for the level default.' },
   // Workspace override — defaults to the caller\'s cwd if omitted.
   cwd: { type: 'string', description: 'Working-directory path for the child. Omit for caller cwd.' },
   // Initial task instructions — if omitted, the child is created idle.

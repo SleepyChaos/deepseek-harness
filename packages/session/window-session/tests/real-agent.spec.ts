@@ -174,7 +174,9 @@ describe('window-session against the real AgentRegistry', () => {
     const live = mounted.ctx.agents.get(SessionId(sessionId))
     expect(live).toBeDefined()
     expect(live?.session.id).toBe(sessionId)
-    expect(live?.options).toEqual({})
+    // {{model}} fix: a child without an explicit pair still gets a model — the
+    // deployment default from AgentDefaultModelConfig.
+    expect(live?.options).toEqual({ provider: 'test-provider', model: 'test-model' })
 
     // setup ran with the agent context; the mock preset mount recorded nothing
     // observable, but the task card reached the real agent inbox + session.
@@ -215,6 +217,18 @@ describe('window-session against the real AgentRegistry', () => {
     const sessionId = String(created.sessionId)
 
     const live = mounted.ctx.agents.get(SessionId(sessionId))
+    expect(live?.session.header.agentPreset).toBe('minimal')
+  })
+
+  it('expands level l1 through the real AgentRegistry with the default ladder', async () => {
+    const mounted = await mount()
+
+    const created = json((await mounted.call('window_create', { level: 'l1' }, 'orchestrator')).text)
+    const sessionId = String(created.sessionId)
+    const live = mounted.ctx.agents.get(SessionId(sessionId))
+
+    expect(created.agentPreset).toBe('minimal')
+    expect(live?.options).toEqual({ provider: 'deepseek', model: 'deepseek-v4-flash-0731' })
     expect(live?.session.header.agentPreset).toBe('minimal')
   })
 
