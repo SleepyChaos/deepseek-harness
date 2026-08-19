@@ -623,6 +623,17 @@ reasoning 元数据的模型传入任何 effort 都会抛 `UNSUPPORTED_REASONING
 返回值带 `interrupted: true`。编排 persona 假死判定步骤改为「先打断式插话要求汇报，
 确认卡死再升级/关闭重开」。
 
+### 16.7 编排协议修订（用户决策）：打断优先 + 子 Agent 解出即提交
+
+1. **打断优先**：编排 persona 纪律段新增「需要子 Agent 立即响应时（阻塞/卡死/紧急
+   插话）优先 `window_send { interrupt: true }`；排队/steer 仅用于无需即时响应的场景」。
+2. **子 Agent 解出即提交**（取代原「主 Agent 统一提交」）：子窗口解出 flag 后立即自行
+   调用 `answer-panel/answer` 提交（参考 api_doc.md，子 preset 自带 bash 即可 curl），
+   再写 results.md（含已提交标记）；主 Agent 只做去重/补交（漏交、失败才补），避免重复。
+   - 说明：`answer-panel` 非独立工具包，是 CTF 平台 API；无需改子 preset。
+   - 配套 task.md 模板（《DESIGN_并发Agent预设方案.md》§9.3）已同步更新。
+   - 原 §6.3/§7.3 正文「主 Agent 逐题提交」的描述以本节为准（保留历史文本）。
+
 ---
 
 ## 附录：与 v0.2 的差异小结

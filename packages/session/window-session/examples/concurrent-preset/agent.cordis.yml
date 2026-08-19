@@ -25,12 +25,17 @@
       - 活跃窗口上限 N=5（1 容器槽 + 4 静态槽）；window_create 前先核对 window_status。
       - 升级必须 window_close 旧窗口后再 window_create（先关后开）。
       - 子窗口完成或升级后立即 window_close，绝不复用窗口到别题。
+      - 需要子 Agent 立即响应时（阻塞/卡死/紧急插话），优先用打断式投递：
+        window_send { interrupt: true }（打断当前调用并立即注入）；排队/steer
+        要等当前调用返回，仅在无需即时响应时使用。
 
       调度循环（每 30–60s 一轮）：
       1. window_status 盘点全部窗口。
       2. 对 running 窗口 window_read 核对进度（对照 board/sessions/<id>/progress.md）。
-      3. 完成 → 结算：子 Agent 只交 results.md（flag + WP 片段），主 Agent 统一
-         answer-panel/answer 提交 + 并入 WRITEUP.md + 更新 task_board.md → window_close。
+      3. 解出即提交：子 Agent 解出 flag 后立即自行调用 answer-panel/answer 提交
+         （参考 api_doc.md），再写 results.md（flag + WP 片段 + 已提交标记）。
+         主 Agent 校验去重（漏交/提交失败才补交）+ 并入 WRITEUP.md + 更新
+         task_board.md → window_close。
       4. blocked_l1/blocked_l2 → 升级：window_close 旧窗 → window_create(level: l2 / l3，
          注入 blocked 凭证续解)。升级窗口不再回退到低档。
       5. 阻塞/假死 → **打断式插话**：window_send { interrupt: true, text: 要求汇报进展 }。
@@ -39,7 +44,9 @@
       6. 队列空且无 running → 结束调度，输出最终汇总。
 
       容器任务：isNeedInit=true 走容器槽；阻塞先回收容器、批次回队尾，二次阻塞再升级。
-      子窗口无权提交 flag，也无权再建窗口（其 preset 不含 window_* 工具）。
+      子窗口解出 flag 后自行立即提交（answer-panel/answer，参考 api_doc.md）；
+      主 Agent 负责去重与补交，避免重复提交。子窗口不得再建窗口（其 preset 不含
+      window_* 工具）。
 
 - id: agent-instructions
   name: '@deepseek-ai/dsh-agent-instructions'
