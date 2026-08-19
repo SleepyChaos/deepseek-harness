@@ -40,7 +40,7 @@ export interface WindowAgent {
   session: { id: string }
   followup(message: UserMessage): void
   steer(message: UserMessage): void
-  cancel(cause: unknown): void
+  cancel(cause: unknown, options?: { keepInbox?: boolean }): void
 }
 
 /** The owned handle returned by the agents factory. */
@@ -374,15 +374,17 @@ export async function executeRead(
 // ---------------------------------------------------------------------------
 
 /**
- * Queue or steer one user message into an owned live child window.
- * @param args - Target session, text, and optional steering mode.
+ * Queue, steer, or interrupt one user message into an owned live child window.
+ * @param args - Target session, text, and delivery mode: `steer` injects at the
+ *   next step boundary; `interrupt` aborts the current step/tool call first and
+ *   delivers immediately (true interrupt-and-continue).
  * @param exec - Tool execution identity used for ownership validation.
  * @param deps - Host agent service used to find the child.
  * @param store - Registry carrying ownership and activity state.
  * @returns JSON text describing acceptance or the send failure.
  */
 export function executeSend(
-  args: { sessionId: string; text: string; steer?: boolean },
+  args: { sessionId: string; text: string; steer?: boolean; interrupt?: boolean },
   exec: CallerIdentity,
   deps: CtxDeps,
   store: RegistryStore,
@@ -398,14 +400,27 @@ export function executeSend(
   const content: ContentBlock[] = [{ type: 'text', text: args.text }]
   try {
     const message = createUserMessage({ content, source: { kind: 'user' } })
-    if (args.steer === true) agent.steer(message)
-    else agent.followup(message)
+    if (args.interrupt === true) {
+      // True interrupt: abort the in-flight step/tool call (keeping the inbox),
+      // then steer — the driver wakes from the abort and claims the message in
+      // a fresh turn immediately.
+      agent.cancel({ kind: 'user' }, { keepInbox: true })
+      agent.steer(message)
+    } else if (args.steer === true) {
+      agent.steer(message)
+    } else {
+      agent.followup(message)
+    }
   } catch (e: unknown) {
     return JSON.stringify({ accepted: false, error: 'send-failed', message: String(e) })
   }
 
   touchActivity(store, args.sessionId)
-  return JSON.stringify({ accepted: true, sessionId: args.sessionId })
+  return JSON.stringify({
+    accepted: true,
+    sessionId: args.sessionId,
+    ...(args.interrupt === true ? { interrupted: true } : {}),
+  })
 }
 
 // ---------------------------------------------------------------------------

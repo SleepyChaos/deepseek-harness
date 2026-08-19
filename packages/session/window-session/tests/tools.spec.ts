@@ -78,7 +78,7 @@ async function mount(maxWindows = 5): Promise<Mounted> {
           this.steered.push(message)
         },
         cancel(cause) {
-          this.cancelled.push(String(cause))
+          this.cancelled.push(JSON.stringify(cause))
         },
       }
       live.set(agent.id, agent)
@@ -207,7 +207,7 @@ describe('window-session tools (mocked boundary services)', () => {
     const closed = json((await mounted.call('window_close', { sessionId }, 'orchestrator')).text)
     expect(closed.closed).toBe(true)
     expect(mounted.disposed).toContain(sessionId)
-    expect(first?.cancelled).toContain('closed-by-tool')
+    expect(first?.cancelled).toContain('"closed-by-tool"')
 
     const status2 = json((await mounted.call('window_status', {}, 'orchestrator')).text)
     expect(status2.active).toBe(0)
@@ -319,5 +319,27 @@ describe('window-session tools (mocked boundary services)', () => {
       provider: 'default-provider',
       model: 'default-model',
     })
+  })
+
+  it('interrupt:true aborts the current step and steers the message immediately', async () => {
+    const mounted = await mount()
+    const created = json((await mounted.call('window_create', { level: 'l1' }, 'orchestrator')).text)
+    const sessionId = String(created.sessionId)
+
+    const sent = json((await mounted.call('window_send', {
+      sessionId,
+      text: 'report progress now',
+      interrupt: true,
+    }, 'orchestrator')).text)
+    expect(sent.accepted).toBe(true)
+    expect(sent.interrupted).toBe(true)
+
+    const first = mounted.created[0]
+    expect(first?.cancelled).toHaveLength(1)
+    expect(first?.cancelled[0]).toContain('user')
+    expect(first?.steered).toHaveLength(1)
+    expect(first?.steered[0]?.content.some(
+      block => block.type === 'text' && block.text === 'report progress now',
+    )).toBe(true)
   })
 })

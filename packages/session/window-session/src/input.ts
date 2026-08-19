@@ -37,7 +37,8 @@ export const windowReadParameters = {
 export const windowSendParameters = {
   ...TARGET_SESSION_PARAM,
   text: { type: 'string', required: true, description: 'Message text to deliver to the child.' },
-  steer: { type: 'boolean', description: 'If true, send as steering (interrupt current turn); otherwise queue as follow-up.' },
+  steer: { type: 'boolean', description: 'If true, deliver as steering (takes effect at the next step boundary); otherwise queue as follow-up.' },
+  interrupt: { type: 'boolean', description: 'If true, abort the child\'s current step/tool call now and deliver immediately (true interrupt); use when the child is stuck in a long-running call and needs a prompt.' },
 } as const
 
 /** JSON schema for closing and optionally archiving a child window. */

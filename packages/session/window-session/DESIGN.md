@@ -606,6 +606,23 @@ reasoning 元数据的模型传入任何 effort 都会抛 `UNSUPPORTED_REASONING
 （配置的 `models` 条目仅有 id）；留空走模型默认。插件级 `DEFAULT_LEVELS` 仍含
 示意 effort，仅作未覆盖时的兜底。
 
+### 16.6 通信机制澄清 + 打断式插话（`interrupt`）
+
+**主↔子通信模型**（实读 agent-loop/inbox 源码）：
+
+- 主→子：`window_send` → `createUserMessage(source:{kind:'user'})` 注入子会话；
+  `followup`（next-turn）/ `steer`（next-step）/ `interrupt`（见下）。
+- 子→主：board/ 文件协议 + 主 `window_read` 拉取；子 preset 无 window 工具，不能反向发消息。
+- `steer: true` 的**真实语义**：插入 `next-step` 队列，在**下一个 step 边界**（当前
+  模型/工具调用返回后）生效 —— **不打断进行中的长工具调用**。
+- 真打断：`agent.cancel(cause, {keepInbox:true})` abort 当前 step 信号 → `steer(message)`
+  在 abort 后唤醒 driver 重开 turn 立即处理（`send` 的 `wakingAfterAbort` 路径）。
+
+**新增 `window_send(interrupt?: boolean)`**（阻塞/假死场景专用）：`interrupt: true` →
+`cancel({kind:'user'}, {keepInbox:true})` + `steer(message)`，立即打断长调用并注入；
+返回值带 `interrupted: true`。编排 persona 假死判定步骤改为「先打断式插话要求汇报，
+确认卡死再升级/关闭重开」。
+
 ---
 
 ## 附录：与 v0.2 的差异小结

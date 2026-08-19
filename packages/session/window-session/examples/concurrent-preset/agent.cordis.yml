@@ -33,7 +33,9 @@
          answer-panel/answer 提交 + 并入 WRITEUP.md + 更新 task_board.md → window_close。
       4. blocked_l1/blocked_l2 → 升级：window_close 旧窗 → window_create(level: l2 / l3，
          注入 blocked 凭证续解)。升级窗口不再回退到低档。
-      5. >10min 无进展 → 假死判定：window_send 询问或关闭重开。
+      5. 阻塞/假死 → **打断式插话**：window_send { interrupt: true, text: 要求汇报进展 }。
+         子 Agent 卡在长时间工具调用时，interrupt 会立即打断该调用并注入指令
+         （排队/steer 需等调用返回，可能长时间无响应）。确认确属卡死后再升级或关闭重开。
       6. 队列空且无 running → 结束调度，输出最终汇总。
 
       容器任务：isNeedInit=true 走容器槽；阻塞先回收容器、批次回队尾，二次阻塞再升级。
