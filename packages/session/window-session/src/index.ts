@@ -57,6 +57,13 @@ export interface LevelConfigInput {
  * standard(high), L3 GLM-5.3 + standard(highest). Deployment should calibrate
  * these to the actually installed providers/models via the `levels` config.
  */
+/**
+ * Default three-rung ability ladder (v0.2 §7.1). These are UN-CALIBRATED
+ * examples: deployments must override `levels` in their preset config with
+ * their real provider/model ids (and only add `reasoningEffort` when the
+ * model reports reasoning support — llm.resolveCallConfig rejects unsupported
+ * effort values).
+ */
 export const DEFAULT_LEVELS = {
   l1: { preset: 'minimal', provider: 'deepseek', model: 'deepseek-v4-flash-0731', reasoningEffort: 'low' },
   l2: { preset: 'standard', provider: 'deepseek', model: 'deepseek-v4-pro-0813', reasoningEffort: 'high' },

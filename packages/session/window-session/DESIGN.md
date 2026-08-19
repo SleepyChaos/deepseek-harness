@@ -598,6 +598,14 @@ window_read 轮询进度；window_send 续派/介入；window_close 回收；win
 4. 测试：level 展开 / 显式覆盖 / 默认兜底（mock 边界 3 例）+ 真实边界 level:l1 展开 1 例；
    原「无模型 → agentOptions 为空」断言改为断言默认模型注入（锁定修复）。
 
+**环境校准（并发 preset 配置）**：provider = `ali-bailian`（「西湖论剑-阿里百炼」，
+DASCTF 网关 `openai-completions-full-url` 端点，`~/.dsh/settings.yaml` llm-pi-ai 配置）；
+三级模型 `deepseek-v4-flash-0731 / deepseek-v4-pro-0813 / ZHIPU/GLM-5.3`。
+⚠️ `reasoningEffort` 在并发 preset 中**刻意留空**：`llm.resolveCallConfig` 对无
+reasoning 元数据的模型传入任何 effort 都会抛 `UNSUPPORTED_REASONING_EFFORT`
+（配置的 `models` 条目仅有 id）；留空走模型默认。插件级 `DEFAULT_LEVELS` 仍含
+示意 effort，仅作未覆盖时的兜底。
+
 ---
 
 ## 附录：与 v0.2 的差异小结

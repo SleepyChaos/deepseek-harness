@@ -114,25 +114,24 @@
   config:
     maxWindows: 5
     toolTimeoutMs: 180000
-    # 能力梯级表（v0.2 §7.1）：window_create(level: l1|l2|l3) 从这里展开
-    # preset/provider/model/reasoningEffort。请按本环境实际安装的 provider 校准。
+    # 能力梯级表（v0.2 §7.1）：window_create(level: l1|l2|l3) 从这里展开。
+    # provider = ali-bailian（西湖论剑-阿里百炼，DASCTF 网关 full-url 端点）。
+    # reasoningEffort 刻意留空：当前网关模型无 reasoning 元数据，传入任何 effort
+    # 会被 llm.resolveCallConfig 以 UNSUPPORTED_REASONING_EFFORT 拒绝；留空走模型默认。
     defaultLevel: l1
     levels:
       l1:
         preset: minimal
-        provider: deepseek
+        provider: ali-bailian
         model: deepseek-v4-flash-0731
-        reasoningEffort: low
       l2:
         preset: standard
-        provider: deepseek
+        provider: ali-bailian
         model: deepseek-v4-pro-0813
-        reasoningEffort: high
       l3:
         preset: standard
-        provider: zhipu
-        model: glm-5.3
-        reasoningEffort: highest
+        provider: ali-bailian
+        model: ZHIPU/GLM-5.3
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 
