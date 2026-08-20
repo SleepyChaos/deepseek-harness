@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-面向调度 Agent 的模型工具包：让主 Agent 创建、驱动、读取和关闭普通窗口会话，无需 subagent 的 `origin:'subagent'` 限制。注册五个工具（`window_create` / `window_read` / `window_send` / `window_status` / `window_close`）以及一条系统提示引导段落。宿主组合不默认挂载。
+面向调度 Agent 的模型工具包：让主 Agent 创建、驱动、读取和关闭普通窗口会话，无需 subagent 的 `origin:'subagent'` 限制。注册五个工具（`window_create` / `window_read` / `window_send` / `window_status` / `window_close`）以及一条系统提示引导段落。DeepSeek Harness 的 CLI/Web 构建现在内置可选的 `concurrent` 预设，会挂载这些工具；部署默认值保持不变。
 
 ## 配置项
 
@@ -64,4 +64,4 @@ Use window_create to launch a new child window session with a specific preset. M
 
 ## 已知限制与后续工作
 
-- 宿主组合默认不挂载并发窗口工具；宿主必须显式选择或复制示例预设。客户端监控面板以及插件重载后的持久化注册表恢复仍待后续实现。
+- 对于没有提供 DeepSeek Harness `concurrent` 预设的其他宿主，本包仍需显式挂载；CLI/Web 构建提供该预设但不会静默改成默认模式。客户端监控面板以及插件重载后的持久化注册表恢复仍待后续实现。

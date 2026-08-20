@@ -23,6 +23,8 @@ import type {} from '@deepseek-ai/dsh-token-meter'
 
 const CONFIG_DIR = fileURLToPath(new URL('../config/', import.meta.url))
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const SHIPPED_PRESET_ROOT = join(CONFIG_DIR, 'agent-presets')
+const CONCURRENT_EXAMPLE_ROOT = join(REPO_ROOT, 'packages/session/window-session/examples/concurrent-preset')
 /** The shipped Web surface: the dsh-base and dsh-web-app bundle patches over an empty preset root. */
 const BASE_PATCH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
@@ -42,7 +44,7 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 /**
  * Boot the shipped Web composition, minus the rows that would bind a port,
  * touch the network, or write outside the test. Everything that decides an
- * agent's capabilities is the real thing, including both shipped presets.
+ * agent's capabilities is the real thing, including every shipped preset.
  */
 async function bootWeb(
   settingsFile: string,
@@ -194,12 +196,19 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies every shipped preset, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'concurrent', 'cordis', 'minimal', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
+  })
+
+  it('keeps the shipped concurrent preset identical to the package example', async () => {
+    for (const file of ['agent.cordis.yml', 'preset.yml']) {
+      await expect(readFile(join(SHIPPED_PRESET_ROOT, 'concurrent', file), 'utf8'))
+        .resolves.toBe(await readFile(join(CONCURRENT_EXAMPLE_ROOT, file), 'utf8'))
+    }
   })
 
   it('composes the full agent from `standard`', async () => {
@@ -219,6 +228,24 @@ describe('the shipped Web composition', () => {
         'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_search',
         'workflow', 'write',
       ])
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('composes the concurrent preset with the window-session tools', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-concurrent'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'concurrent').then(() => undefined),
+    })
+    try {
+      const tools = toolNames(ctx, handle.agent).filter(name => name !== 'glob' && name !== 'grep')
+      expect(tools).toEqual(expect.arrayContaining([
+        'ask_user_question', 'bash', 'create_goal', 'get_goal', 'job_kill', 'job_list',
+        'job_output', 'read', 'skill', 'todo_write', 'update_goal', 'web_search', 'write',
+        'window_create', 'window_read', 'window_send', 'window_status', 'window_close',
+      ]))
+      expect(tools).not.toEqual(expect.arrayContaining(['subagent', 'subagent_fork', 'workflow', 'ralph']))
     } finally {
       await handle.dispose()
     }

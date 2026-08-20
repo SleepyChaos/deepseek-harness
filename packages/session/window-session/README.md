@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Model-facing tools that let a scheduling agent create, drive, read, and close ordinary window sessions — without subagent overhead or `origin:'subagent'` restrictions. The package registers five tools (`window_create`, `window_read`, `window_send`, `window_status`, `window_close`) plus a concise system-prompt guidance section. Shipped host compositions do not mount it by default.
+Model-facing tools that let a scheduling agent create, drive, read, and close ordinary window sessions — without subagent overhead or `origin:'subagent'` restrictions. The package registers five tools (`window_create`, `window_read`, `window_send`, `window_status`, `window_close`) plus a concise system-prompt guidance section. The DeepSeek Harness CLI/Web build ships a selectable `concurrent` preset that mounts it; the deployment default remains unchanged.
 
 ## Configuration
 
@@ -64,4 +64,4 @@ Prefix-stable while the plugin definition and guidance text remain unchanged.
 
 ## Known Limitations and Deferred Work
 
-- Shipped host compositions do not mount the concurrent window tools by default; a host must explicitly select or copy the example preset. A client monitoring panel and durable registry recovery after plugin reload remain deferred.
+- The package remains opt-in for hosts that do not ship the DeepSeek Harness `concurrent` preset; the CLI/Web build exposes that preset but does not silently make it the default. A client monitoring panel and durable registry recovery after plugin reload remain deferred.

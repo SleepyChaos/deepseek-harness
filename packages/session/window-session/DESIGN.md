@@ -526,10 +526,12 @@ window_read 轮询进度；window_send 续派/介入；window_close 回收；win
 ### 15.7 M1 实现清单（后续阶段）
 
 1. ✅ 并发模式 preset 落盘并**挂载校验通过**：
-   - 用户根 `~/.dsh/.agent-presets/concurrent/`（`preset.yml` + `agent.cordis.yml`）；
    - `standingKeyFor('concurrent')` → `{"agentPreset":"concurrent"}`，全部行激活、无泄漏服务
      （2025-08-18，动态探针 `preset_probe` 实测）；
-   - 版本化示例入仓库：`packages/session/window-session/examples/concurrent-preset/`；
+   - CLI/Web 的随附预设位于 `apps/cli/config/agent-presets/concurrent/`，因此 git clone +
+     安装后会自动出现在预设名单中；`packages/session/window-session/examples/concurrent-preset/`
+     保留为包级示例副本；
+   - 用户根 `~/.dsh/.agent-presets/concurrent/` 仍兼容旧部署，但不再是 CLI/Web 首次接线的必要步骤；
    - 前置接线：`@deepseek-ai/dsh-window-session` 已链接进 `apps/cli/node_modules/@deepseek-ai/`
      （行包解析锚点），包自身 node_modules 补齐 4 个运行时依赖链接（schemastery/dsh-tools/dsh-llm/dsh-agent）。
 2. 真机集成：真实 host + 模型下跑通 建窗/续派/介入/升级/关窗 闭环（§12 M0-B 余项）；
